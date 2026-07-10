@@ -1,0 +1,16 @@
+# Variables de entorno (credenciales reales)
+.env
+
+# Binarios compilados de Go
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output de cobertura
+*.out
+
+.vscode/
+.idea/
