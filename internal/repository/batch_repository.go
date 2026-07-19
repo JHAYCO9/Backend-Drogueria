@@ -17,6 +17,11 @@ type BatchRepository interface {
 	SumStockByMedicine(medicineID uuid.UUID) (int, error)
 	FindExpiringSoon(withinDays int) ([]domain.Batch, error)
 	FindExpired() ([]domain.Batch, error)
+	UpdateQuantity(batchID uuid.UUID, newQty int) error
+	FindAvailableByMedicineFEFO(medicineID uuid.UUID) ([]domain.Batch, error)
+	FindEarliestExpiration(medicineID uuid.UUID) (*domain.Batch, error)
+	CountAvailableByMedicine(medicineID uuid.UUID) (int, error)
+	DecreaseQuantity(batchID uuid.UUID, qty int) error
 }
 
 type batchRepository struct {
@@ -39,8 +44,8 @@ func (r *batchRepository) FindByID(id uuid.UUID) (*domain.Batch, error) {
 	return &batch, nil
 }
 
-// FindByMedicine cubre RF-018: todos los lotes de un medicamento, más
-// recientes primero.
+// FindByMedicine cubre RF-018: todos los lotes de un medicamento, ordenados
+// por fecha de vencimiento.
 func (r *batchRepository) FindByMedicine(medicineID uuid.UUID) ([]domain.Batch, error) {
 	var batches []domain.Batch
 	err := r.db.Where("medicine_id = ?", medicineID).Order("expiration_date").Find(&batches).Error
@@ -65,7 +70,7 @@ func (r *batchRepository) SumStockByMedicine(medicineID uuid.UUID) (int, error) 
 }
 
 // FindExpiringSoon cubre RF-023: lotes cuya fecha de vencimiento cae
-// dentro de los próximos `withinDays` días, sin incluir los ya vencidos.
+// dentro de los proximos `withinDays` dias, sin incluir los ya vencidos.
 func (r *batchRepository) FindExpiringSoon(withinDays int) ([]domain.Batch, error) {
 	now := time.Now()
 	limit := now.AddDate(0, 0, withinDays)
@@ -75,10 +80,56 @@ func (r *batchRepository) FindExpiringSoon(withinDays int) ([]domain.Batch, erro
 	return batches, err
 }
 
-// FindExpired cubre RF-024: lotes cuya fecha de vencimiento ya pasó.
+// FindExpired cubre RF-024: lotes cuya fecha de vencimiento ya paso.
 func (r *batchRepository) FindExpired() ([]domain.Batch, error) {
 	var batches []domain.Batch
 	err := r.db.Where("quantity > 0 AND expiration_date <= ?", time.Now()).
 		Order("expiration_date").Find(&batches).Error
 	return batches, err
+}
+
+// UpdateQuantity cubre RF-017: establece directamente la cantidad de un
+// lote (usado en ajustes manuales, donde se reemplaza el valor completo).
+func (r *batchRepository) UpdateQuantity(batchID uuid.UUID, newQty int) error {
+	return r.db.Model(&domain.Batch{}).Where("id = ?", batchID).
+		UpdateColumn("quantity", newQty).Error
+}
+
+// FindAvailableByMedicineFEFO cubre RF-025: lotes con existencias
+// disponibles ordenados por fecha de vencimiento ascendente para
+// la estrategia FEFO (First Expired, First Out).
+func (r *batchRepository) FindAvailableByMedicineFEFO(medicineID uuid.UUID) ([]domain.Batch, error) {
+	var batches []domain.Batch
+	err := r.db.Where("medicine_id = ? AND quantity > 0 AND expiration_date > ?", medicineID, time.Now()).
+		Order("expiration_date ASC").Find(&batches).Error
+	return batches, err
+}
+
+// FindEarliestExpiration cubre RF-028: retorna el lote con vencimiento
+// mas proximo para un medicamento dado (solo lotes con existencias).
+func (r *batchRepository) FindEarliestExpiration(medicineID uuid.UUID) (*domain.Batch, error) {
+	var batch domain.Batch
+	err := r.db.Where("medicine_id = ? AND quantity > 0", medicineID).
+		Order("expiration_date ASC").First(&batch).Error
+	if err != nil {
+		return nil, err
+	}
+	return &batch, nil
+}
+
+// CountAvailableByMedicine cubre RF-028: cuenta el numero de lotes con
+// existencias disponibles para un medicamento.
+func (r *batchRepository) CountAvailableByMedicine(medicineID uuid.UUID) (int, error) {
+	var count int64
+	err := r.db.Model(&domain.Batch{}).
+		Where("medicine_id = ? AND quantity > 0", medicineID).
+		Count(&count).Error
+	return int(count), err
+}
+
+// DecreaseQuantity cubre RF-025: resta unidades de un lote especifico
+// durante el proceso FEFO de descuento de ventas.
+func (r *batchRepository) DecreaseQuantity(batchID uuid.UUID, qty int) error {
+	return r.db.Model(&domain.Batch{}).Where("id = ?", batchID).
+		UpdateColumn("quantity", gorm.Expr("quantity - ?", qty)).Error
 }

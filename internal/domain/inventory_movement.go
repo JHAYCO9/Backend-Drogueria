@@ -19,6 +19,12 @@ type InventoryMovement struct {
 	UserID       uuid.UUID `gorm:"not null"`
 	ReferenceID  *uuid.UUID
 	CreatedAt    time.Time
+
+	// Campos calculados (no se persisten en BD). Se rellenan en el
+	// service para enriquecer las respuestas de RF-019 y RF-030.
+	MedicineName string `gorm:"-"`
+	BatchCode    string `gorm:"-"`
+	Username     string `gorm:"-"`
 }
 
 func (InventoryMovement) TableName() string { return "inventory_movements" }

@@ -22,7 +22,11 @@ func main() {
 	defer sqlDB.Close()
 
 	r := gin.Default()
-	router.Setup(r, db, cfg)
+	alertService := router.Setup(r, db, cfg)
+
+	// RNF-006: ejecutar verificacion de alertas de inventario al inicio
+	// del sistema como goroutine concurrente (chequeo en frio).
+	go alertService.CheckInventoryAlerts()
 
 	log.Printf("servidor escuchando en el puerto %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
