@@ -57,6 +57,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 			protected.GET("/batches/expiring", batchHandler.ListExpiringSoon)            // RF-023
 			protected.GET("/batches/expired", batchHandler.ListExpired)                  // RF-024
 			protected.GET("/medicines/critical", medicineHandler.ListCritical)           // RF-021
+			protected.GET("/inventory/general", inventoryHandler.GetGeneralInventory)    // RF-028 — consulta, no modifica
 
 			// RF-014: busqueda avanzada de medicamentos (cajeros y administradores)
 			protected.GET("/medicines/search", medicineHandler.SearchMedicines)
@@ -81,17 +82,16 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 				admin.PATCH("/medicines/:id/alert-days", medicineHandler.UpdateAlertDays) // RF-022
 
 				// Sprint 2 - Bloque 1: Mantenimiento de Medicamentos
-				admin.PUT("/medicines/:id", medicineHandler.UpdateMedicine)              // RF-012
+				admin.PUT("/medicines/:id", medicineHandler.UpdateMedicine)                  // RF-012
 				admin.PATCH("/medicines/:id/deactivate", medicineHandler.DeactivateMedicine) // RF-013
 				admin.PATCH("/medicines/:id/activate", medicineHandler.ActivateMedicine)     // Activar medicamento
 
 				// Sprint 2 - Bloque 2: Movimientos y Ajustes de Inventario
-				admin.POST("/inventory/adjustments", inventoryHandler.RegisterAdjustment)          // RF-017
-				admin.GET("/inventory/movements", inventoryHandler.ListMovements)             // RF-019
-				admin.GET("/inventory/stock-history", inventoryHandler.GetStockHistory) // RF-030
+				admin.POST("/inventory/adjustments", inventoryHandler.RegisterAdjustment) // RF-017
+				admin.GET("/inventory/movements", inventoryHandler.ListMovements)         // RF-019
+				admin.GET("/inventory/stock-history", inventoryHandler.GetStockHistory)   // RF-030
 
 				// Sprint 2 - Bloque 3: Consultas Avanzadas
-				admin.GET("/inventory/general", inventoryHandler.GetGeneralInventory)   // RF-028
 				admin.GET("/inventory/critical", inventoryHandler.GetCriticalInventory) // RF-029
 			}
 		}

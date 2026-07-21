@@ -65,7 +65,7 @@ func (r *medicineRepository) FindByBarcode(barcode string) (*domain.Medicine, er
 
 func (r *medicineRepository) FindAll() ([]domain.Medicine, error) {
 	var medicines []domain.Medicine
-	err := r.db.Where("is_active = ?", true).Order("name").Find(&medicines).Error
+	err := r.db.Order("name").Find(&medicines).Error // ya no filtra por is_active
 	return medicines, err
 }
 
