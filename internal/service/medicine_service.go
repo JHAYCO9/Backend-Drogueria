@@ -26,6 +26,7 @@ type RegisterMedicineInput struct {
 	PricePerSeal  float64
 	PricePerBox   float64
 	MinStock      int
+	HasIva        bool
 }
 
 type UpdateMedicineInput struct {
@@ -36,6 +37,7 @@ type UpdateMedicineInput struct {
 	PricePerSeal  *float64
 	PricePerBox   *float64
 	MinStock      *int
+	HasIva        bool
 }
 
 type MedicineSearchParams struct {
@@ -104,6 +106,7 @@ func (s *medicineService) RegisterMedicine(input RegisterMedicineInput) (*domain
 		PricePerSeal:  input.PricePerSeal,
 		PricePerBox:   input.PricePerBox,
 		MinStock:      input.MinStock,
+		HasIva:        input.HasIva,
 		IsActive:      true,
 		CreatedAt:     time.Now(),
 	}
@@ -200,6 +203,7 @@ func (s *medicineService) UpdateMedicine(id uuid.UUID, input UpdateMedicineInput
 	if input.MinStock != nil {
 		medicine.MinStock = *input.MinStock
 	}
+	medicine.HasIva = input.HasIva // <- esta línea faltaba
 
 	if err := s.medicineRepo.Update(medicine); err != nil {
 		return nil, err

@@ -42,6 +42,7 @@ func (h *MedicineHandler) RegisterMedicine(c *gin.Context) {
 		PricePerSeal:  req.PricePerSeal,
 		PricePerBox:   req.PricePerBox,
 		MinStock:      req.MinStock,
+		HasIva:        req.HasIva,
 	})
 
 	if err != nil {
@@ -177,6 +178,7 @@ func (h *MedicineHandler) UpdateMedicine(c *gin.Context) {
 		PricePerSeal:  req.PricePerSeal,
 		PricePerBox:   req.PricePerBox,
 		MinStock:      req.MinStock,
+		HasIva:        req.HasIva,
 	}, userID, c.ClientIP())
 	if err != nil {
 		log.Printf("error actualizando medicamento: %v", err)
@@ -316,6 +318,7 @@ func toMedicineResponse(m *domain.Medicine) dto.MedicineResponse {
 		PricePerSeal:  m.PricePerSeal,
 		PricePerBox:   m.PricePerBox,
 		MinStock:      m.MinStock,
+		HasIva:        m.HasIva,
 		IsActive:      m.IsActive,
 		CreatedAt:     m.CreatedAt.Format(time.RFC3339),
 	}

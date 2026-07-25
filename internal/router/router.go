@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -39,8 +41,22 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	batchHandler := handler.NewBatchHandler(batchService, medicineService, medicineRepo)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService, alertService)
 
+	syncRepo := repository.NewSyncRepository(db)
+	syncHandler := handler.NewSyncHandler(syncRepo)
+
+	cashRepo := repository.NewCashRegisterRepository(db)
+	saleRepo := repository.NewSaleRepository(db)
+	saleService := service.NewSaleService(saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo)
+	saleHandler := handler.NewSaleHandler(saleService, medicineRepo)
+
 	api := r.Group("/api/v1")
 	{
+		// Sin autenticación: el SyncService lo usa solo para saber si hay
+		// conexión al servidor, antes de intentar autenticar nada.
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+
 		api.POST("/auth/login", authHandler.Login)
 
 		protected := api.Group("/")
@@ -64,6 +80,18 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 			// RF-006: cualquier usuario autenticado puede cambiar su propia contrasena
 			protected.PUT("/users/change-password", userHandler.ChangePassword)
+
+			protected.POST("/sync/events", syncHandler.PushEvent)
+
+			protected.POST("/sales", saleHandler.StartSale) // RF-031 + RF-032
+			protected.GET("/sales/:id", saleHandler.GetSale)
+			protected.POST("/sales/:id/items", saleHandler.AddItem)                // RF-033
+			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)   // RF-035
+			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)            // RF-036
+			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)   // RF-039 + RF-041
+			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi) // RF-040 + RF-041
+
+			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
 
 			admin := protected.Group("/")
 			admin.Use(middleware.RequireRole("Administrador"))
