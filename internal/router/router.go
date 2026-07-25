@@ -47,7 +47,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	cashRepo := repository.NewCashRegisterRepository(db)
 	saleRepo := repository.NewSaleRepository(db)
 	saleService := service.NewSaleService(saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo)
-	saleHandler := handler.NewSaleHandler(saleService, medicineRepo)
+	saleHandler := handler.NewSaleHandler(saleService, medicineRepo, userRepo)
 
 	api := r.Group("/api/v1")
 	{
@@ -121,6 +121,9 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 				// Sprint 2 - Bloque 3: Consultas Avanzadas
 				admin.GET("/inventory/critical", inventoryHandler.GetCriticalInventory) // RF-029
+
+				admin.GET("/sales", saleHandler.ListSales)                 // RF-044
+				admin.GET("/sales/range", saleHandler.GetSalesByDateRange) // RF-047
 			}
 		}
 	}

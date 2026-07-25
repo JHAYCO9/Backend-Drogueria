@@ -3,6 +3,7 @@ package dto
 type ReceiptItemLine struct {
 	MedicineName string  `json:"medicine_name"`
 	Quantity     int     `json:"quantity"`
+	SaleUnit     string  `json:"sale_unit"`
 	UnitPrice    float64 `json:"unit_price"`
 	BasePrice    float64 `json:"base_price"` // precio sin IVA de la línea
 	TaxAmount    float64 `json:"tax_amount"` // porción de IVA de la línea

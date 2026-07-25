@@ -10,6 +10,7 @@ import (
 
 	"github.com/drogueria/drogueria-micky-backend/internal/domain"
 	"github.com/drogueria/drogueria-micky-backend/internal/dto"
+	"github.com/drogueria/drogueria-micky-backend/internal/repository"
 	"github.com/drogueria/drogueria-micky-backend/internal/service"
 )
 
@@ -18,12 +19,13 @@ type SaleHandler struct {
 	medicineRepo interface {
 		FindByID(id uuid.UUID) (*domain.Medicine, error)
 	}
+	userRepo repository.UserRepository
 }
 
 func NewSaleHandler(saleService service.SaleService, medicineRepo interface {
 	FindByID(id uuid.UUID) (*domain.Medicine, error)
-}) *SaleHandler {
-	return &SaleHandler{saleService: saleService, medicineRepo: medicineRepo}
+}, userRepo repository.UserRepository) *SaleHandler {
+	return &SaleHandler{saleService: saleService, medicineRepo: medicineRepo, userRepo: userRepo}
 }
 
 // GetReceipt cubre RF-043.
@@ -48,8 +50,9 @@ func (h *SaleHandler) GetReceipt(c *gin.Context) {
 	items := make([]dto.ReceiptItemLine, 0, len(receipt.Items))
 	for _, it := range receipt.Items {
 		items = append(items, dto.ReceiptItemLine{
-			MedicineName: it.MedicineName, Quantity: it.Quantity, UnitPrice: it.UnitPrice,
-			BasePrice: it.BasePrice, TaxAmount: it.TaxAmount, HasIva: it.HasIva, Subtotal: it.Subtotal,
+			MedicineName: it.MedicineName, Quantity: it.Quantity, SaleUnit: it.SaleUnit,
+			UnitPrice: it.UnitPrice, BasePrice: it.BasePrice, TaxAmount: it.TaxAmount,
+			HasIva: it.HasIva, Subtotal: it.Subtotal,
 		})
 	}
 
@@ -65,6 +68,70 @@ func (h *SaleHandler) GetReceipt(c *gin.Context) {
 		AmountReceived: receipt.AmountReceived,
 		ChangeGiven:    receipt.ChangeGiven,
 	})
+}
+
+// ListSales cubre RF-044.
+func (h *SaleHandler) ListSales(c *gin.Context) {
+	sales, err := h.saleService.ListSales()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo cargar el historial de ventas"})
+		return
+	}
+
+	c.JSON(http.StatusOK, h.toSaleListItems(sales))
+}
+
+// GetSalesByDateRange cubre RF-047. Espera ?from=2026-01-01&to=2026-01-31.
+func (h *SaleHandler) GetSalesByDateRange(c *gin.Context) {
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+
+	if fromStr == "" || toStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "los parámetros from y to son obligatorios (formato AAAA-MM-DD)"})
+		return
+	}
+
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fecha 'from' inválida, formato esperado AAAA-MM-DD"})
+		return
+	}
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fecha 'to' inválida, formato esperado AAAA-MM-DD"})
+		return
+	}
+	// incluye todo el día final, no solo las 00:00
+	to = to.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+
+	result, err := h.saleService.GetSalesByDateRange(from, to)
+	if err != nil {
+		log.Printf("error consultando ventas por rango: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo consultar el rango de fechas"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.SalesDateRangeSummary{
+		FromDate: fromStr, ToDate: toStr,
+		SalesCount: result.SalesCount, TotalSold: result.TotalSold, AverageSale: result.AverageSale,
+		Sales: h.toSaleListItems(result.Sales),
+	})
+}
+
+func (h *SaleHandler) toSaleListItems(sales []domain.Sale) []dto.SaleListItem {
+	items := make([]dto.SaleListItem, 0, len(sales))
+	for _, sale := range sales {
+		cashierName := ""
+		if u, err := h.userRepo.FindByID(sale.UserID); err == nil {
+			cashierName = u.FullName
+		}
+		items = append(items, dto.SaleListItem{
+			ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
+			TotalAmount: sale.TotalAmount, PaymentMethod: sale.PaymentMethod,
+			CashierName: cashierName, CreatedAt: sale.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return items
 }
 
 // StartSale cubre RF-031 + RF-032.
@@ -87,10 +154,50 @@ func (h *SaleHandler) StartSale(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, dto.StartSaleResponse{
-		ID: sale.ID.String(), SaleNumber: sale.SaleNumber,
-		CreatedAt: sale.CreatedAt.Format(time.RFC3339),
-	})
+	response, err := h.buildSaleResponse(sale.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo cargar el detalle de la venta"})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// buildSaleResponse arma el dto.SaleResponse completo para una venta
+// (usado por StartSale al retomar, y por GetSale).
+func (h *SaleHandler) buildSaleResponse(saleID uuid.UUID) (*dto.SaleResponse, error) {
+	sale, items, err := h.saleService.GetSaleDetail(saleID)
+	if err != nil {
+		return nil, err
+	}
+
+	itemResponses := make([]dto.SaleItemResponse, 0, len(items))
+	totalTax := 0.0
+	for _, it := range items {
+		medicineName := ""
+		if m, err := h.medicineRepo.FindByID(it.MedicineID); err == nil {
+			medicineName = m.Name
+		}
+		itemResponses = append(itemResponses, dto.SaleItemResponse{
+			ID: it.ID.String(), MedicineID: it.MedicineID.String(), MedicineName: medicineName,
+			BatchID: it.BatchID.String(), Quantity: it.Quantity, SaleUnit: it.SaleUnit,
+			UnitPrice: it.UnitPrice, Subtotal: it.Subtotal, TaxAmount: it.TaxAmount,
+		})
+		totalTax += it.TaxAmount
+	}
+
+	var finalizedAt *string
+	if sale.FinalizedAt != nil {
+		f := sale.FinalizedAt.Format(time.RFC3339)
+		finalizedAt = &f
+	}
+
+	return &dto.SaleResponse{
+		ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
+		Items: itemResponses, TotalAmount: sale.TotalAmount, TotalTaxAmount: totalTax,
+		PaymentMethod: sale.PaymentMethod, AmountReceived: sale.AmountReceived, ChangeGiven: sale.ChangeGiven,
+		CreatedAt: sale.CreatedAt.Format(time.RFC3339), FinalizedAt: finalizedAt,
+	}, nil
 }
 
 // AddItem cubre RF-033.
@@ -107,7 +214,7 @@ func (h *SaleHandler) AddItem(c *gin.Context) {
 		return
 	}
 
-	input := service.AddSaleItemInput{Barcode: req.Barcode, Quantity: req.Quantity}
+	input := service.AddSaleItemInput{Barcode: req.Barcode, Quantity: req.Quantity, SaleUnit: req.SaleUnit}
 	if req.MedicineID != "" {
 		mid, err := uuid.Parse(req.MedicineID)
 		if err != nil {
@@ -124,6 +231,8 @@ func (h *SaleHandler) AddItem(c *gin.Context) {
 		case service.ErrSaleNotFound, service.ErrMedicineNotFound:
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case service.ErrSaleNotInProgress, service.ErrNoStockAvailable:
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case service.ErrSaleNotInProgress, service.ErrNoStockAvailable, service.ErrInvalidSaleUnit:
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -267,40 +376,11 @@ func (h *SaleHandler) GetSale(c *gin.Context) {
 		return
 	}
 
-	sale, items, err := h.saleService.GetSaleDetail(saleID)
+	response, err := h.buildSaleResponse(saleID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "venta no encontrada"})
 		return
 	}
 
-	itemResponses := make([]dto.SaleItemResponse, 0, len(items))
-	for _, it := range items {
-		medicineName := ""
-		if m, err := h.medicineRepo.FindByID(it.MedicineID); err == nil {
-			medicineName = m.Name
-		}
-		itemResponses = append(itemResponses, dto.SaleItemResponse{
-			ID: it.ID.String(), MedicineID: it.MedicineID.String(), MedicineName: medicineName,
-			BatchID: it.BatchID.String(), Quantity: it.Quantity,
-			UnitPrice: it.UnitPrice, Subtotal: it.Subtotal, TaxAmount: it.TaxAmount,
-		})
-	}
-
-	var finalizedAt *string
-	if sale.FinalizedAt != nil {
-		f := sale.FinalizedAt.Format(time.RFC3339)
-		finalizedAt = &f
-	}
-
-	totalTax := 0.0
-	for _, it := range items {
-		totalTax += it.TaxAmount
-	}
-
-	c.JSON(http.StatusOK, dto.SaleResponse{
-		ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
-		Items: itemResponses, TotalAmount: sale.TotalAmount, TotalTaxAmount: totalTax,
-		PaymentMethod: sale.PaymentMethod, AmountReceived: sale.AmountReceived, ChangeGiven: sale.ChangeGiven,
-		CreatedAt: sale.CreatedAt.Format(time.RFC3339), FinalizedAt: finalizedAt,
-	})
+	c.JSON(http.StatusOK, response)
 }

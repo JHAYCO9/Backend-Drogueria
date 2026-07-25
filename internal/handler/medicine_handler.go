@@ -33,16 +33,12 @@ func (h *MedicineHandler) RegisterMedicine(c *gin.Context) {
 	}
 
 	medicine, err := h.medicineService.RegisterMedicine(service.RegisterMedicineInput{
-		Barcode:       req.Barcode,
-		Name:          req.Name,
-		Laboratory:    req.Laboratory,
-		Concentration: req.Concentration,
-		Presentation:  req.Presentation,
-		PricePerPill:  req.PricePerPill,
-		PricePerSeal:  req.PricePerSeal,
-		PricePerBox:   req.PricePerBox,
-		MinStock:      req.MinStock,
-		HasIva:        req.HasIva,
+		Barcode: req.Barcode, Name: req.Name, Laboratory: req.Laboratory,
+		Concentration: req.Concentration, Presentation: req.Presentation,
+		PricePerPill: req.PricePerPill, PricePerSeal: req.PricePerSeal, PricePerBox: req.PricePerBox,
+		MinStock: req.MinStock, HasIva: req.HasIva,
+		SellsByPill: req.SellsByPill, SellsBySeal: req.SellsBySeal, SellsByBox: req.SellsByBox,
+		UnitsPerSeal: req.UnitsPerSeal, UnitsPerBox: req.UnitsPerBox,
 	})
 
 	if err != nil {
@@ -171,15 +167,13 @@ func (h *MedicineHandler) UpdateMedicine(c *gin.Context) {
 	userID, _ := uuid.Parse(userIDStr.(string))
 
 	medicine, err := h.medicineService.UpdateMedicine(id, service.UpdateMedicineInput{
-		Name:          req.Name,
-		Presentation:  req.Presentation,
-		Concentration: req.Concentration,
-		PricePerPill:  req.PricePerPill,
-		PricePerSeal:  req.PricePerSeal,
-		PricePerBox:   req.PricePerBox,
-		MinStock:      req.MinStock,
-		HasIva:        req.HasIva,
+		Name: req.Name, Presentation: req.Presentation, Concentration: req.Concentration,
+		PricePerPill: req.PricePerPill, PricePerSeal: req.PricePerSeal, PricePerBox: req.PricePerBox,
+		MinStock: req.MinStock, HasIva: req.HasIva,
+		SellsByPill: req.SellsByPill, SellsBySeal: req.SellsBySeal, SellsByBox: req.SellsByBox,
+		UnitsPerSeal: req.UnitsPerSeal, UnitsPerBox: req.UnitsPerBox,
 	}, userID, c.ClientIP())
+
 	if err != nil {
 		log.Printf("error actualizando medicamento: %v", err)
 		if err == service.ErrMedicineNotFound {
@@ -308,18 +302,12 @@ func (h *MedicineHandler) SearchMedicines(c *gin.Context) {
 
 func toMedicineResponse(m *domain.Medicine) dto.MedicineResponse {
 	return dto.MedicineResponse{
-		ID:            m.ID.String(),
-		Barcode:       m.Barcode,
-		Name:          m.Name,
-		Laboratory:    m.Laboratory,
-		Concentration: m.Concentration,
-		Presentation:  m.Presentation,
-		PricePerPill:  m.PricePerPill,
-		PricePerSeal:  m.PricePerSeal,
-		PricePerBox:   m.PricePerBox,
-		MinStock:      m.MinStock,
-		HasIva:        m.HasIva,
-		IsActive:      m.IsActive,
-		CreatedAt:     m.CreatedAt.Format(time.RFC3339),
+		ID: m.ID.String(), Barcode: m.Barcode, Name: m.Name,
+		Laboratory: m.Laboratory, Concentration: m.Concentration, Presentation: m.Presentation,
+		PricePerPill: m.PricePerPill, PricePerSeal: m.PricePerSeal, PricePerBox: m.PricePerBox,
+		MinStock: m.MinStock, HasIva: m.HasIva,
+		SellsByPill: m.SellsByPill, SellsBySeal: m.SellsBySeal, SellsByBox: m.SellsByBox,
+		UnitsPerSeal: m.UnitsPerSeal, UnitsPerBox: m.UnitsPerBox,
+		IsActive: m.IsActive, CreatedAt: m.CreatedAt.Format(time.RFC3339),
 	}
 }

@@ -27,6 +27,8 @@ type SaleService interface {
 	FinalizeCash(saleID uuid.UUID, amountReceived float64) (*domain.Sale, float64, error) // RF-039 + RF-041
 	FinalizeNequi(saleID uuid.UUID, amountPaid float64) (*domain.Sale, error)             // RF-040 + RF-041
 	GetReceipt(saleID uuid.UUID) (*ReceiptData, error)                                    // RF-043
+	ListSales() ([]domain.Sale, error)                                                    // RF-044
+	GetSalesByDateRange(from, to time.Time) (*SalesRangeResult, error)                    // RF-047
 
 }
 
@@ -34,6 +36,7 @@ type AddSaleItemInput struct {
 	MedicineID uuid.UUID
 	Barcode    string
 	Quantity   int
+	SaleUnit   string
 }
 
 type saleService struct {
@@ -68,6 +71,13 @@ func (s *saleService) StartSale(userID uuid.UUID) (*domain.Sale, error) {
 		return nil, ErrNoCashOpen
 	}
 
+	// Si ya hay una venta sin finalizar en esta caja, se retoma en vez
+	// de crear una nueva — evita dejar ventas huérfanas "en_progreso"
+	// cada vez que el cajero entra al módulo de Ventas.
+	if existing, err := s.saleRepo.FindInProgress(openCash.ID); err == nil {
+		return existing, nil
+	}
+
 	sale := &domain.Sale{
 		ID:             uuid.New(),
 		UserID:         userID,
@@ -87,6 +97,8 @@ func (s *saleService) StartSale(userID uuid.UUID) (*domain.Sale, error) {
 // (RF-027), asigna automáticamente el lote más próximo a vencer disponible
 // (FEFO, ya resuelto por BatchRepository al reutilizar la misma consulta
 // que usa el escaneo), calcula el subtotal, y NO toca el inventario todavía.
+var ErrInvalidSaleUnit = errors.New("el medicamento no se vende en la unidad seleccionada")
+
 func (s *saleService) AddItem(saleID uuid.UUID, input AddSaleItemInput) (*domain.SaleItem, error) {
 	sale, err := s.saleRepo.FindByID(saleID)
 	if err != nil {
@@ -108,14 +120,47 @@ func (s *saleService) AddItem(saleID uuid.UUID, input AddSaleItemInput) (*domain
 		return nil, ErrMedicineNotFound
 	}
 
-	// FEFO: el lote con existencias que vence primero.
+	// Valida que el medicamento efectivamente se venda en la unidad
+	// elegida por el cajero, y calcula cuántas pastillas reales
+	// representa esa cantidad (unitsConsumed) — es lo que se descuenta
+	// del inventario, que siempre se cuenta en unidades sueltas.
+	var unitPrice float64
+	unitsPerItem := 1
+	switch input.SaleUnit {
+	case "pastilla":
+		if !medicine.SellsByPill {
+			return nil, ErrInvalidSaleUnit
+		}
+		unitPrice = medicine.PricePerPill
+		unitsPerItem = 1
+	case "sello":
+		if !medicine.SellsBySeal {
+			return nil, ErrInvalidSaleUnit
+		}
+		unitPrice = medicine.PricePerSeal
+		unitsPerItem = medicine.UnitsPerSeal
+	case "caja":
+		if !medicine.SellsByBox {
+			return nil, ErrInvalidSaleUnit
+		}
+		unitPrice = medicine.PricePerBox
+		unitsPerItem = medicine.UnitsPerBox
+	default:
+		return nil, ErrInvalidSaleUnit
+	}
+
+	unitsConsumed := input.Quantity * unitsPerItem
+
+	// FEFO, pero ahora buscando un lote con suficientes UNIDADES SUELTAS
+	// disponibles (no "cantidad de cajas"), ya que el inventario siempre
+	// se mide en pastillas.
 	batches, err := s.batchRepo.FindByMedicine(medicine.ID)
 	if err != nil {
 		return nil, err
 	}
 	var selectedBatch *domain.Batch
 	for i := range batches {
-		if batches[i].Quantity >= input.Quantity {
+		if batches[i].Quantity >= unitsConsumed {
 			selectedBatch = &batches[i]
 			break
 		}
@@ -124,28 +169,17 @@ func (s *saleService) AddItem(saleID uuid.UUID, input AddSaleItemInput) (*domain
 		return nil, ErrNoStockAvailable
 	}
 
-	unitPrice := medicine.PricePerPill
 	subtotal := unitPrice * float64(input.Quantity)
 
-	// El precio ya incluye IVA (práctica estándar en Colombia): la porción
-	// de impuesto se extrae del subtotal, no se suma aparte — así el total
-	// que paga el cliente no cambia según tenga o no IVA, solo se discrimina
-	// para efectos contables/facturación electrónica (Épica 9).
 	var taxAmount float64
 	if medicine.HasIva {
 		taxAmount = subtotal - (subtotal / 1.19)
 	}
 
 	item := &domain.SaleItem{
-		ID:         uuid.New(),
-		SaleID:     saleID,
-		MedicineID: medicine.ID,
-		BatchID:    selectedBatch.ID,
-		Quantity:   input.Quantity,
-		UnitPrice:  unitPrice,
-		Subtotal:   subtotal,
-		TaxAmount:  taxAmount,
-		CreatedAt:  time.Now(),
+		ID: uuid.New(), SaleID: saleID, MedicineID: medicine.ID, BatchID: selectedBatch.ID,
+		Quantity: input.Quantity, SaleUnit: input.SaleUnit, UnitsConsumed: unitsConsumed,
+		UnitPrice: unitPrice, Subtotal: subtotal, TaxAmount: taxAmount, CreatedAt: time.Now(),
 	}
 
 	if err := s.saleRepo.AddItem(item); err != nil {
@@ -157,6 +191,41 @@ func (s *saleService) AddItem(saleID uuid.UUID, input AddSaleItemInput) (*domain
 	}
 
 	return item, nil
+}
+
+type SalesRangeResult struct {
+	Sales       []domain.Sale
+	SalesCount  int
+	TotalSold   float64
+	AverageSale float64
+}
+
+// ListSales cubre RF-044: historial completo de ventas.
+func (s *saleService) ListSales() ([]domain.Sale, error) {
+	return s.saleRepo.FindAll()
+}
+
+// GetSalesByDateRange cubre RF-047: número de ventas, total vendido y
+// promedio por venta entre dos fechas.
+func (s *saleService) GetSalesByDateRange(from, to time.Time) (*SalesRangeResult, error) {
+	sales, err := s.saleRepo.FindByDateRange(from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	total := 0.0
+	for _, sale := range sales {
+		total += sale.TotalAmount
+	}
+
+	average := 0.0
+	if len(sales) > 0 {
+		average = total / float64(len(sales))
+	}
+
+	return &SalesRangeResult{
+		Sales: sales, SalesCount: len(sales), TotalSold: total, AverageSale: average,
+	}, nil
 }
 
 // RemoveItem cubre RF-035: quita la línea y recalcula el total; el
@@ -280,18 +349,14 @@ func (s *saleService) prepareFinalize(saleID uuid.UUID) (*domain.Sale, []domain.
 // fecha/hora de finalización.
 func (s *saleService) finalizeCommon(sale *domain.Sale, items []domain.SaleItem) error {
 	for _, item := range items {
-		if err := s.batchRepo.IncreaseQuantity(item.BatchID, -item.Quantity); err != nil {
+		if err := s.batchRepo.IncreaseQuantity(item.BatchID, -item.UnitsConsumed); err != nil {
 			return err
 		}
 
 		movement := &domain.InventoryMovement{
-			ID:           uuid.New(),
-			MedicineID:   item.MedicineID,
-			BatchID:      &item.BatchID,
-			MovementType: "venta",
-			Quantity:     -item.Quantity,
-			UserID:       sale.UserID,
-			ReferenceID:  &sale.ID,
+			ID: uuid.New(), MedicineID: item.MedicineID, BatchID: &item.BatchID,
+			MovementType: "venta", Quantity: -item.UnitsConsumed,
+			UserID: sale.UserID, ReferenceID: &sale.ID,
 		}
 		if err := s.movementRepo.Create(movement); err != nil {
 			return err
@@ -301,7 +366,6 @@ func (s *saleService) finalizeCommon(sale *domain.Sale, items []domain.SaleItem)
 	now := time.Now()
 	sale.Status = "finalizada"
 	sale.FinalizedAt = &now
-
 	return s.saleRepo.Update(sale)
 }
 
@@ -321,6 +385,7 @@ func (s *saleService) recalculateTotal(sale *domain.Sale) error {
 type ReceiptItemData struct {
 	MedicineName string
 	Quantity     int
+	SaleUnit     string
 	UnitPrice    float64
 	BasePrice    float64
 	TaxAmount    float64
@@ -376,7 +441,7 @@ func (s *saleService) GetReceipt(saleID uuid.UUID) (*ReceiptData, error) {
 		totalTax += it.TaxAmount
 
 		receiptItems = append(receiptItems, ReceiptItemData{
-			MedicineName: name, Quantity: it.Quantity, UnitPrice: it.UnitPrice,
+			MedicineName: name, Quantity: it.Quantity, SaleUnit: it.SaleUnit,
 			BasePrice: base, TaxAmount: it.TaxAmount, HasIva: hasIva, Subtotal: it.Subtotal,
 		})
 	}

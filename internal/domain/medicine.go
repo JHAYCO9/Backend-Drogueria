@@ -22,6 +22,11 @@ type Medicine struct {
 	MinStock            int     `gorm:"not null;default:0"`     // RF-020
 	ExpirationAlertDays int     `gorm:"not null;default:30"`    // RF-022: días antes de vencer para alertar
 	HasIva              bool    `gorm:"not null;default:false"` // 19% IVA, precio ya lo incluye
+	SellsByPill         bool    `gorm:"not null;default:true"`  // se puede vender por unidad suelta
+	SellsBySeal         bool    `gorm:"not null;default:false"` // se puede vender por sello/blister
+	SellsByBox          bool    `gorm:"not null;default:false"` // se puede vender por caja/tarro completo
+	UnitsPerSeal        int     `gorm:"not null;default:1"`     // cuántas pastillas trae un sello
+	UnitsPerBox         int     `gorm:"not null;default:1"`     // cuántas pastillas trae una caja
 	IsActive            bool    `gorm:"default:true"`
 	CreatedAt           time.Time
 	UpdatedAt           time.Time

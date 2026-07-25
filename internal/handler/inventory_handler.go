@@ -39,7 +39,7 @@ func (h *InventoryHandler) RegisterIngreso(c *gin.Context) {
 	userID, _ := uuid.Parse(userIDStr.(string))
 
 	err = h.inventoryService.RegisterIngreso(service.RegisterIngresoInput{
-		BatchID: batchID, Quantity: req.Quantity, UserID: userID,
+		BatchID: batchID, Quantity: req.Quantity, SaleUnit: req.SaleUnit, UserID: userID,
 	})
 	if err != nil {
 		log.Printf("error registrando ingreso: %v", err)

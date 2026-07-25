@@ -8,11 +8,10 @@ type RegisterBatchRequest struct {
 	ExpirationDate string `json:"expiration_date" binding:"required"` // formato "2006-01-02"
 }
 
-// RegisterIngresoRequest cubre RF-016: ingreso adicional a un lote
-// que ya existe.
 type RegisterIngresoRequest struct {
 	BatchID  string `json:"batch_id" binding:"required"`
 	Quantity int    `json:"quantity" binding:"required,gt=0"`
+	SaleUnit string `json:"sale_unit" binding:"required,oneof=pastilla sello caja"`
 }
 
 type BatchResponse struct {

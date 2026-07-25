@@ -25,6 +25,11 @@ type RegisterMedicineInput struct {
 	PricePerPill  float64
 	PricePerSeal  float64
 	PricePerBox   float64
+	SellsByPill   bool
+	SellsBySeal   bool
+	SellsByBox    bool
+	UnitsPerSeal  int
+	UnitsPerBox   int
 	MinStock      int
 	HasIva        bool
 }
@@ -36,6 +41,11 @@ type UpdateMedicineInput struct {
 	PricePerPill  *float64
 	PricePerSeal  *float64
 	PricePerBox   *float64
+	SellsByPill   bool
+	SellsBySeal   bool
+	SellsByBox    bool
+	UnitsPerSeal  int
+	UnitsPerBox   int
 	MinStock      *int
 	HasIva        bool
 }
@@ -96,19 +106,13 @@ func (s *medicineService) RegisterMedicine(input RegisterMedicineInput) (*domain
 	}
 
 	medicine := &domain.Medicine{
-		ID:            uuid.New(),
-		Barcode:       input.Barcode,
-		Name:          input.Name,
-		Laboratory:    input.Laboratory,
-		Concentration: input.Concentration,
-		Presentation:  input.Presentation,
-		PricePerPill:  input.PricePerPill,
-		PricePerSeal:  input.PricePerSeal,
-		PricePerBox:   input.PricePerBox,
-		MinStock:      input.MinStock,
-		HasIva:        input.HasIva,
-		IsActive:      true,
-		CreatedAt:     time.Now(),
+		ID: uuid.New(), Barcode: input.Barcode, Name: input.Name,
+		Laboratory: input.Laboratory, Concentration: input.Concentration, Presentation: input.Presentation,
+		PricePerPill: input.PricePerPill, PricePerSeal: input.PricePerSeal, PricePerBox: input.PricePerBox,
+		MinStock: input.MinStock, HasIva: input.HasIva,
+		SellsByPill: input.SellsByPill, SellsBySeal: input.SellsBySeal, SellsByBox: input.SellsByBox,
+		UnitsPerSeal: maxInt(input.UnitsPerSeal, 1), UnitsPerBox: maxInt(input.UnitsPerBox, 1),
+		IsActive: true, CreatedAt: time.Now(),
 	}
 
 	if err := s.medicineRepo.Create(medicine); err != nil {
@@ -203,7 +207,12 @@ func (s *medicineService) UpdateMedicine(id uuid.UUID, input UpdateMedicineInput
 	if input.MinStock != nil {
 		medicine.MinStock = *input.MinStock
 	}
-	medicine.HasIva = input.HasIva // <- esta línea faltaba
+	medicine.HasIva = input.HasIva
+	medicine.SellsByPill = input.SellsByPill
+	medicine.SellsBySeal = input.SellsBySeal
+	medicine.SellsByBox = input.SellsByBox
+	medicine.UnitsPerSeal = maxInt(input.UnitsPerSeal, 1)
+	medicine.UnitsPerBox = maxInt(input.UnitsPerBox, 1)
 
 	if err := s.medicineRepo.Update(medicine); err != nil {
 		return nil, err
@@ -270,4 +279,11 @@ func (s *medicineService) SearchMedicines(params MedicineSearchParams) ([]domain
 		params.MaxPrice,
 		params.HasStock,
 	)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -90,6 +90,11 @@ func (r *medicineRepository) Update(medicine *domain.Medicine) error {
 			"price_per_box":  medicine.PricePerBox,
 			"min_stock":      medicine.MinStock,
 			"has_iva":        medicine.HasIva,
+			"sells_by_pill":  medicine.SellsByPill,
+			"sells_by_seal":  medicine.SellsBySeal,
+			"sells_by_box":   medicine.SellsByBox,
+			"units_per_seal": medicine.UnitsPerSeal,
+			"units_per_box":  medicine.UnitsPerBox,
 		}).Error
 }
 

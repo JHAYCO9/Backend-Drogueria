@@ -17,6 +17,7 @@ var ErrBatchBelongsToOtherMedicine = errors.New("el lote no pertenece al medicam
 type RegisterIngresoInput struct {
 	BatchID  uuid.UUID
 	Quantity int
+	SaleUnit string
 	UserID   uuid.UUID
 }
 
@@ -37,10 +38,10 @@ type MovementFilters struct {
 // FEFODeductionResult muestra el detalle de cada lote que fue afectado
 // durante un descuento FEFO.
 type FEFODeductionResult struct {
-	BatchID    uuid.UUID
-	BatchCode  string
-	Deducted   int
-	Remaining  int
+	BatchID   uuid.UUID
+	BatchCode string
+	Deducted  int
+	Remaining int
 }
 
 type InventoryService interface {
@@ -93,14 +94,30 @@ func NewInventoryService(
 }
 
 // RegisterIngreso cubre RF-016: suma cantidad a un lote existente y
-// registra el movimiento en el historial.
 func (s *inventoryService) RegisterIngreso(input RegisterIngresoInput) error {
 	batch, err := s.batchRepo.FindByID(input.BatchID)
 	if err != nil {
 		return ErrBatchNotFound
 	}
 
-	if err := s.batchRepo.IncreaseQuantity(batch.ID, input.Quantity); err != nil {
+	medicine, err := s.medicineRepo.FindByID(batch.MedicineID)
+	if err != nil {
+		return ErrMedicineNotFound
+	}
+
+	unitsPerItem := 1
+	switch input.SaleUnit {
+	case "pastilla":
+		unitsPerItem = 1
+	case "sello":
+		unitsPerItem = medicine.UnitsPerSeal
+	case "caja":
+		unitsPerItem = medicine.UnitsPerBox
+	}
+
+	unitsToAdd := input.Quantity * unitsPerItem
+
+	if err := s.batchRepo.IncreaseQuantity(batch.ID, unitsToAdd); err != nil {
 		return err
 	}
 
@@ -109,7 +126,7 @@ func (s *inventoryService) RegisterIngreso(input RegisterIngresoInput) error {
 		MedicineID:   batch.MedicineID,
 		BatchID:      &batch.ID,
 		MovementType: "ingreso",
-		Quantity:     input.Quantity,
+		Quantity:     unitsToAdd,
 		UserID:       input.UserID,
 	}
 	return s.movementRepo.Create(movement)
@@ -311,9 +328,9 @@ func (s *inventoryService) GetGeneralInventory() ([]GeneralInventoryItem, error)
 
 // GetCriticalInventory cubre RF-029: medicamentos que cumplen al menos
 // una condicion critica:
-//   1. Proximos a vencer (dentro del rango de dias parametrizado)
-//   2. Stock bajo (stock actual <= stock minimo)
-//   3. Completamente vencidos
+//  1. Proximos a vencer (dentro del rango de dias parametrizado)
+//  2. Stock bajo (stock actual <= stock minimo)
+//  3. Completamente vencidos
 func (s *inventoryService) GetCriticalInventory(expirationDays int) ([]CriticalInventoryItem, error) {
 	medicines, err := s.medicineRepo.FindAll()
 	if err != nil {

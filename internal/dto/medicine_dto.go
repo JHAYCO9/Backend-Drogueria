@@ -11,8 +11,13 @@ type RegisterMedicineRequest struct {
 	PricePerPill  float64 `json:"price_per_pill" binding:"gte=0"`
 	PricePerSeal  float64 `json:"price_per_seal" binding:"gte=0"`
 	PricePerBox   float64 `json:"price_per_box" binding:"gte=0"`
-	MinStock      int     `json:"min_stock" binding:"gte=0"` // RF-020: debe ser >= 0
+	MinStock      int     `json:"min_stock" binding:"gte=0"`
 	HasIva        bool    `json:"has_iva"`
+	SellsByPill   bool    `json:"sells_by_pill"`
+	SellsBySeal   bool    `json:"sells_by_seal"`
+	SellsByBox    bool    `json:"sells_by_box"`
+	UnitsPerSeal  int     `json:"units_per_seal" binding:"gte=1"`
+	UnitsPerBox   int     `json:"units_per_box" binding:"gte=1"`
 }
 
 type MedicineResponse struct {
@@ -27,6 +32,11 @@ type MedicineResponse struct {
 	PricePerBox   float64 `json:"price_per_box"`
 	MinStock      int     `json:"min_stock"`
 	HasIva        bool    `json:"has_iva"`
+	SellsByPill   bool    `json:"sells_by_pill"`
+	SellsBySeal   bool    `json:"sells_by_seal"`
+	SellsByBox    bool    `json:"sells_by_box"`
+	UnitsPerSeal  int     `json:"units_per_seal"`
+	UnitsPerBox   int     `json:"units_per_box"`
 	IsActive      bool    `json:"is_active"`
 	CreatedAt     string  `json:"created_at"`
 }
@@ -49,6 +59,11 @@ type UpdateMedicineRequest struct {
 	PricePerBox   *float64 `json:"price_per_box" binding:"omitempty,gte=0"`
 	MinStock      *int     `json:"min_stock" binding:"omitempty,gte=0"`
 	HasIva        bool     `json:"has_iva"`
+	SellsByPill   bool     `json:"sells_by_pill"`
+	SellsBySeal   bool     `json:"sells_by_seal"`
+	SellsByBox    bool     `json:"sells_by_box"`
+	UnitsPerSeal  int      `json:"units_per_seal" binding:"gte=1"`
+	UnitsPerBox   int      `json:"units_per_box" binding:"gte=1"`
 }
 
 // MedicineSearchResponse cubre RF-014: respuesta enriquecida con
