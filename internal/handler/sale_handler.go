@@ -271,6 +271,43 @@ func (h *SaleHandler) RemoveItem(c *gin.Context) {
 	h.GetSale(c)
 }
 
+// UpdateItem cubre RF-034: PUT /api/v1/sales/:id/items/:itemId
+func (h *SaleHandler) UpdateItem(c *gin.Context) {
+	saleID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id de venta inválido"})
+		return
+	}
+	itemID, err := uuid.Parse(c.Param("itemId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id de ítem inválido"})
+		return
+	}
+
+	var req struct {
+		Quantity int `json:"quantity" binding:"required,gt=0"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "la cantidad debe ser mayor a cero"})
+		return
+	}
+
+	if _, err := h.saleService.UpdateItemQuantity(saleID, itemID, req.Quantity); err != nil {
+		switch err {
+		case service.ErrSaleNotFound, service.ErrItemNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case service.ErrSaleNotInProgress:
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			// RF-037: Si stock_disponible < cantidad_solicitada -> HTTP 400 Bad Request
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	h.GetSale(c)
+}
+
 // CancelSale cubre RF-036.
 func (h *SaleHandler) CancelSale(c *gin.Context) {
 	saleID, err := uuid.Parse(c.Param("id"))
@@ -383,4 +420,176 @@ func (h *SaleHandler) GetSale(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// ============================================================
+// Sprint 3 — Nuevos handlers
+// ============================================================
+
+// CreateAtomicSale cubre RF-021: POST /api/v1/sales/atomic
+// Registra una venta completa en una sola transacción ACID.
+func (h *SaleHandler) CreateAtomicSale(c *gin.Context) {
+	userIDStr, _ := c.Get("user_id")
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "Usuario no identificado",
+			"data":    nil,
+			"errors":  "token sin user_id válido",
+		})
+		return
+	}
+
+	var req dto.CreateSaleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Datos de entrada inválidos",
+			"data":    nil,
+			"errors":  err.Error(),
+		})
+		return
+	}
+
+	result, err := h.saleService.CreateSaleAtomic(userID, req)
+	if err != nil {
+		log.Printf("error en venta atómica: %v", err)
+		switch err {
+		case service.ErrNoCashOpen:
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false, "message": err.Error(), "data": nil, "errors": err.Error(),
+			})
+		case service.ErrMedicineNotFound:
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false, "message": err.Error(), "data": nil, "errors": err.Error(),
+			})
+		case service.ErrInsufficientPayment, service.ErrInvalidSaleUnit:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"success": false, "message": err.Error(), "data": nil, "errors": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false, "message": "No se pudo procesar la venta", "data": nil, "errors": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": "Venta registrada exitosamente",
+		"data":    result,
+		"errors":  nil,
+	})
+}
+
+// VoidCompletedSale cubre RF-023: POST /api/v1/sales/:id/void
+// Solo accesible para Administradores (middleware RequireRole en el router).
+func (h *SaleHandler) VoidCompletedSale(c *gin.Context) {
+	saleID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false, "message": "ID de venta inválido", "data": nil,
+			"errors": "el parámetro 'id' debe ser un UUID válido",
+		})
+		return
+	}
+
+	adminIDStr, _ := c.Get("user_id")
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false, "message": "Administrador no identificado", "data": nil, "errors": "token inválido",
+		})
+		return
+	}
+
+	var req dto.CancelSaleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false, "message": "El motivo de anulación es obligatorio (mínimo 5 caracteres)",
+			"data": nil, "errors": err.Error(),
+		})
+		return
+	}
+
+	if err := h.saleService.VoidCompletedSale(saleID, adminID, req.Reason); err != nil {
+		log.Printf("error anulando venta %s: %v", saleID, err)
+		switch err {
+		case service.ErrSaleNotFound:
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false, "message": err.Error(), "data": nil, "errors": err.Error(),
+			})
+		case service.ErrSaleAlreadyCancelled, service.ErrSaleNotFinalized:
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false, "message": err.Error(), "data": nil, "errors": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false, "message": "No se pudo anular la venta", "data": nil, "errors": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Venta anulada correctamente. Stock reintegrado.",
+		"data":    gin.H{"sale_id": saleID.String()},
+		"errors":  nil,
+	})
+}
+
+// ListSalesFiltered cubre RF-022: GET /api/v1/sales (con filtros + paginación).
+// Acepta query params: start_date, end_date, customer_id, user_id, status, page, page_size.
+func (h *SaleHandler) ListSalesFiltered(c *gin.Context) {
+	params := repository.SaleFilterParams{
+		Status:   c.Query("status"),
+		Page:     1,
+		PageSize: 20,
+	}
+
+	if v := c.Query("start_date"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			params.StartDate = &t
+		}
+	}
+	if v := c.Query("end_date"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			end := t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			params.EndDate = &end
+		}
+	}
+	if v := c.Query("customer_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			params.CustomerID = &id
+		}
+	}
+	if v := c.Query("user_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			params.UserID = &id
+		}
+	}
+
+	sales, total, err := h.saleService.ListSalesFiltered(params)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false, "message": "No se pudo obtener el listado de ventas",
+			"data": nil, "errors": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Ventas obtenidas exitosamente",
+		"data": gin.H{
+			"total":     total,
+			"page":      params.Page,
+			"page_size": params.PageSize,
+			"sales":     h.toSaleListItems(sales),
+		},
+		"errors": nil,
+	})
 }

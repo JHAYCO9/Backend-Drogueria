@@ -46,7 +46,9 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 	cashRepo := repository.NewCashRegisterRepository(db)
 	saleRepo := repository.NewSaleRepository(db)
-	saleService := service.NewSaleService(saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo)
+
+	// SaleService actualizado con db y auditRepo (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
+	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo)
 	saleHandler := handler.NewSaleHandler(saleService, medicineRepo, userRepo)
 
 	api := r.Group("/api/v1")
@@ -83,15 +85,19 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 			protected.POST("/sync/events", syncHandler.PushEvent)
 
-			protected.POST("/sales", saleHandler.StartSale) // RF-031 + RF-032
-			protected.GET("/sales/:id", saleHandler.GetSale)
-			protected.POST("/sales/:id/items", saleHandler.AddItem)                // RF-033
-			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)   // RF-035
-			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)            // RF-036
-			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)   // RF-039 + RF-041
-			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi) // RF-040 + RF-041
-
+			// Módulo de Ventas e Inventario (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
+			protected.POST("/sales", saleHandler.StartSale)                             // RF-031
+			protected.GET("/sales/:id", saleHandler.GetSale)                            // RF-045: Consultar detalle de una venta
+			protected.POST("/sales/:id/items", saleHandler.AddItem)                    // RF-033: Agregar ítem
+			protected.PUT("/sales/:id/items/:itemId", saleHandler.UpdateItem)          // RF-034: Modificar cantidad de un medicamento
+			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)       // RF-035: Eliminar ítem
+			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)                // RF-036
+			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)       // RF-039 + RF-041 + RF-042
+			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi)     // RF-040 + RF-041 + RF-042
 			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
+
+			// Venta atómica (una sola llamada HTTP - RF-037, RF-038, RF-042, RNF-008)
+			protected.POST("/sales/atomic", saleHandler.CreateAtomicSale)
 
 			admin := protected.Group("/")
 			admin.Use(middleware.RequireRole("Administrador"))
@@ -122,8 +128,14 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 				// Sprint 2 - Bloque 3: Consultas Avanzadas
 				admin.GET("/inventory/critical", inventoryHandler.GetCriticalInventory) // RF-029
 
-				admin.GET("/sales", saleHandler.ListSales)                 // RF-044
-				admin.GET("/sales/range", saleHandler.GetSalesByDateRange) // RF-047
+				// RF-044: Consultar historial de ventas (con filtros y paginación)
+				admin.GET("/sales", saleHandler.ListSalesFiltered)
+				admin.GET("/sales/range", saleHandler.GetSalesByDateRange)
+
+				// RF-046: Anular una venta (con reintegro atómico de stock)
+				admin.POST("/sales/:id/void", saleHandler.VoidCompletedSale)
+				admin.POST("/sales/:id/anular", saleHandler.VoidCompletedSale)
+				admin.PUT("/sales/:id/anular", saleHandler.VoidCompletedSale)
 			}
 		}
 	}

@@ -10,15 +10,19 @@ import (
 // vacío, se le van agregando SaleItems (RF-033/034/035) sin tocar el
 // inventario todavía, y solo al finalizar (RF-041) se descuenta stock real.
 type Sale struct {
-	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
-	SaleNumber     int       `gorm:"not null;autoIncrement"`
-	UserID         uuid.UUID `gorm:"not null"`
-	CashRegisterID uuid.UUID `gorm:"not null"`
-	Status         string    `gorm:"not null;default:en_progreso"`
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	SaleNumber     int        `gorm:"not null;autoIncrement"`
+	CustomerID     *uuid.UUID `gorm:"type:uuid;index"` // nullable — Consumidor Final si no se especifica
+	UserID         uuid.UUID  `gorm:"not null"`
+	CashRegisterID uuid.UUID  `gorm:"not null"`
+	Status         string     `gorm:"not null;default:en_progreso"`
 	PaymentMethod  *string
-	TotalAmount    float64 `gorm:"not null;default:0"`
+	TotalAmount    float64  `gorm:"not null;default:0"`
 	AmountReceived *float64
 	ChangeGiven    *float64
+	CancelledAt    *time.Time
+	CancelledBy    *uuid.UUID `gorm:"type:uuid"` // ID del admin que anuló
+	CancelReason   *string
 	CreatedAt      time.Time
 	FinalizedAt    *time.Time
 }

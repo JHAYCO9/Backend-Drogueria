@@ -9,17 +9,33 @@ import (
 	"github.com/drogueria/drogueria-micky-backend/internal/domain"
 )
 
+// SaleFilterParams agrupa los filtros opcionales para ListSalesFiltered.
+type SaleFilterParams struct {
+	StartDate  *time.Time
+	EndDate    *time.Time
+	CustomerID *uuid.UUID
+	UserID     *uuid.UUID
+	Status     string
+	Page       int // 1-based
+	PageSize   int
+}
+
 type SaleRepository interface {
 	Create(sale *domain.Sale) error
 	FindByID(id uuid.UUID) (*domain.Sale, error)
+	FindByIDTx(tx *gorm.DB, id uuid.UUID) (*domain.Sale, error)
 	Update(sale *domain.Sale) error
+	UpdateTx(tx *gorm.DB, sale *domain.Sale) error
 	AddItem(item *domain.SaleItem) error
+	UpdateItem(item *domain.SaleItem) error
 	RemoveItem(itemID uuid.UUID, saleID uuid.UUID) error
 	FindItems(saleID uuid.UUID) ([]domain.SaleItem, error)
+	FindItemsTx(tx *gorm.DB, saleID uuid.UUID) ([]domain.SaleItem, error)
 	FindItemByID(itemID uuid.UUID) (*domain.SaleItem, error)
 	FindByDateRange(from, to time.Time) ([]domain.Sale, error)
 	FindAll() ([]domain.Sale, error)
 	FindInProgress(cashRegisterID uuid.UUID) (*domain.Sale, error)
+	FindWithFilters(params SaleFilterParams) ([]domain.Sale, int64, error)
 }
 
 type saleRepository struct {
@@ -48,6 +64,10 @@ func (r *saleRepository) Update(sale *domain.Sale) error {
 
 func (r *saleRepository) AddItem(item *domain.SaleItem) error {
 	return r.db.Create(item).Error
+}
+
+func (r *saleRepository) UpdateItem(item *domain.SaleItem) error {
+	return r.db.Save(item).Error
 }
 
 // RemoveItem cubre RF-035: valida que el ítem pertenezca a la venta
@@ -98,4 +118,67 @@ func (r *saleRepository) FindAll() ([]domain.Sale, error) {
 	var sales []domain.Sale
 	err := r.db.Order("created_at desc").Find(&sales).Error
 	return sales, err
+}
+
+// FindByIDTx permite buscar una venta dentro de una transacción activa.
+func (r *saleRepository) FindByIDTx(tx *gorm.DB, id uuid.UUID) (*domain.Sale, error) {
+	var sale domain.Sale
+	if err := tx.First(&sale, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &sale, nil
+}
+
+// UpdateTx guarda cambios en una venta dentro de una transacción activa.
+func (r *saleRepository) UpdateTx(tx *gorm.DB, sale *domain.Sale) error {
+	return tx.Save(sale).Error
+}
+
+// FindItemsTx devuelve los ítems de una venta dentro de una transacción activa.
+func (r *saleRepository) FindItemsTx(tx *gorm.DB, saleID uuid.UUID) ([]domain.SaleItem, error) {
+	var items []domain.SaleItem
+	err := tx.Where("sale_id = ?", saleID).Order("created_at").Find(&items).Error
+	return items, err
+}
+
+// FindWithFilters cubre RF-022: listado de ventas paginado con filtros
+// opcionales por rango de fecha, cliente, usuario y estado.
+func (r *saleRepository) FindWithFilters(params SaleFilterParams) ([]domain.Sale, int64, error) {
+	var sales []domain.Sale
+	var total int64
+
+	query := r.db.Model(&domain.Sale{})
+
+	if params.StartDate != nil {
+		query = query.Where("created_at >= ?", params.StartDate)
+	}
+	if params.EndDate != nil {
+		query = query.Where("created_at <= ?", params.EndDate)
+	}
+	if params.CustomerID != nil {
+		query = query.Where("customer_id = ?", params.CustomerID)
+	}
+	if params.UserID != nil {
+		query = query.Where("user_id = ?", params.UserID)
+	}
+	if params.Status != "" {
+		query = query.Where("status = ?", params.Status)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	pageSize := params.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	page := params.Page
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	err := query.Order("created_at DESC").Limit(pageSize).Offset(offset).Find(&sales).Error
+	return sales, total, err
 }
