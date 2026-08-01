@@ -36,6 +36,8 @@ type SaleRepository interface {
 	FindAll() ([]domain.Sale, error)
 	FindInProgress(cashRegisterID uuid.UUID) (*domain.Sale, error)
 	FindWithFilters(params SaleFilterParams) ([]domain.Sale, int64, error)
+	FindByCashRegister(cashRegisterID uuid.UUID) ([]domain.Sale, error)
+	FindTodayFinalized(from, to time.Time) ([]domain.Sale, error)
 }
 
 type saleRepository struct {
@@ -58,6 +60,12 @@ func (r *saleRepository) FindByID(id uuid.UUID) (*domain.Sale, error) {
 	return &sale, nil
 }
 
+func (r *saleRepository) FindByCashRegister(cashRegisterID uuid.UUID) ([]domain.Sale, error) {
+	var sales []domain.Sale
+	err := r.db.Where("cash_register_id = ?", cashRegisterID).Find(&sales).Error
+	return sales, err
+}
+
 func (r *saleRepository) Update(sale *domain.Sale) error {
 	return r.db.Save(sale).Error
 }
@@ -75,6 +83,16 @@ func (r *saleRepository) UpdateItem(item *domain.SaleItem) error {
 // manipulando el ID directamente.
 func (r *saleRepository) RemoveItem(itemID uuid.UUID, saleID uuid.UUID) error {
 	return r.db.Where("id = ? AND sale_id = ?", itemID, saleID).Delete(&domain.SaleItem{}).Error
+}
+
+// FindTodayFinalized cubre RF-058: ventas finalizadas dentro del rango
+// de fechas indicado (calculado por el caller con la zona horaria
+// correcta, para no depender de la zona horaria del servidor de BD).
+func (r *saleRepository) FindTodayFinalized(from, to time.Time) ([]domain.Sale, error) {
+	var sales []domain.Sale
+	err := r.db.Where("status = ? AND created_at >= ? AND created_at < ?", "finalizada", from, to).
+		Find(&sales).Error
+	return sales, err
 }
 
 // FindInProgress busca si ya existe una venta sin finalizar para esta

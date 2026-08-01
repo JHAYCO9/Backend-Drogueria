@@ -12,6 +12,7 @@ type InventoryMovementRepository interface {
 	Create(movement *domain.InventoryMovement) error
 	FindAll(movementType string, from, to *time.Time) ([]domain.InventoryMovement, error)
 	FindByDateRange(from, to *time.Time, movementType string) ([]domain.InventoryMovement, error)
+	FindRecentByType(movementType string, limit int) ([]domain.InventoryMovement, error)
 }
 
 type inventoryMovementRepository struct {
@@ -63,5 +64,14 @@ func (r *inventoryMovementRepository) FindByDateRange(from, to *time.Time, movem
 	}
 
 	err := query.Order("created_at DESC").Find(&movements).Error
+	return movements, err
+}
+
+// FindRecentByType cubre RF-060: últimos movimientos de un tipo
+// específico (ej. "ajuste"), para el feed de actividad reciente.
+func (r *inventoryMovementRepository) FindRecentByType(movementType string, limit int) ([]domain.InventoryMovement, error) {
+	var movements []domain.InventoryMovement
+	err := r.db.Where("movement_type = ?", movementType).
+		Order("created_at DESC").Limit(limit).Find(&movements).Error
 	return movements, err
 }

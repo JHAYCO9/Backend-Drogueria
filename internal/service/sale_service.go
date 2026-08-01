@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,14 +52,15 @@ type AddSaleItemInput struct {
 }
 
 type saleService struct {
-	db           *gorm.DB
-	saleRepo     repository.SaleRepository
-	cashRepo     repository.CashRegisterRepository
-	medicineRepo repository.MedicineRepository
-	batchRepo    repository.BatchRepository
-	movementRepo repository.InventoryMovementRepository
-	userRepo     repository.UserRepository
-	auditRepo    repository.AuditRepository
+	db               *gorm.DB
+	saleRepo         repository.SaleRepository
+	cashRepo         repository.CashRegisterRepository
+	medicineRepo     repository.MedicineRepository
+	batchRepo        repository.BatchRepository
+	movementRepo     repository.InventoryMovementRepository
+	cashMovementRepo repository.CashMovementRepository
+	userRepo         repository.UserRepository
+	auditRepo        repository.AuditRepository
 }
 
 func NewSaleService(
@@ -70,11 +72,12 @@ func NewSaleService(
 	movementRepo repository.InventoryMovementRepository,
 	userRepo repository.UserRepository,
 	auditRepo repository.AuditRepository,
+	cashMovementRepo repository.CashMovementRepository, // <- nuevo, al final
 ) SaleService {
 	return &saleService{
 		db: db, saleRepo: saleRepo, cashRepo: cashRepo, medicineRepo: medicineRepo,
 		batchRepo: batchRepo, movementRepo: movementRepo, userRepo: userRepo,
-		auditRepo: auditRepo,
+		auditRepo: auditRepo, cashMovementRepo: cashMovementRepo,
 	}
 }
 
@@ -431,8 +434,9 @@ func (s *saleService) prepareFinalize(saleID uuid.UUID) (*domain.Sale, []domain.
 }
 
 // finalizeCommon cubre el resto de RF-041: descuenta inventario real
-// (recién aquí, no antes), registra el movimiento por cada ítem, y marca
-// fecha/hora de finalización.
+// (recién aquí, no antes), registra el movimiento por cada ítem, marca
+// fecha/hora de finalización, y registra automáticamente el movimiento
+// de caja correspondiente (RF-050).
 func (s *saleService) finalizeCommon(sale *domain.Sale, items []domain.SaleItem) error {
 	for _, item := range items {
 		if err := s.batchRepo.IncreaseQuantity(item.BatchID, -item.UnitsConsumed); err != nil {
@@ -452,7 +456,32 @@ func (s *saleService) finalizeCommon(sale *domain.Sale, items []domain.SaleItem)
 	now := time.Now()
 	sale.Status = "finalizada"
 	sale.FinalizedAt = &now
-	return s.saleRepo.Update(sale)
+
+	if err := s.saleRepo.Update(sale); err != nil {
+		return err
+	}
+
+	// RF-050: registra automáticamente el movimiento de caja según el
+	// método de pago.
+	if sale.PaymentMethod != nil {
+		movementType := "venta_efectivo"
+		if *sale.PaymentMethod == "nequi" {
+			movementType = "venta_nequi"
+		}
+		if err := s.cashMovementRepo.Create(&domain.CashMovement{
+			ID: uuid.New(), CashRegisterID: sale.CashRegisterID, MovementType: movementType,
+			Amount: sale.TotalAmount, Description: "Venta #" + itoa(sale.SaleNumber),
+			ReferenceID: &sale.ID, UserID: sale.UserID,
+		}); err != nil {
+			log.Printf("ERROR creando movimiento de caja: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func itoa(n int) string {
+	return fmt.Sprintf("%d", n)
 }
 
 func (s *saleService) recalculateTotal(sale *domain.Sale) error {
@@ -591,13 +620,13 @@ func (s *saleService) CreateSaleAtomic(userID uuid.UUID, req dto.CreateSaleReque
 
 	// -- Procesar cada ítem: validar y descontar stock --
 	type itemWork struct {
-		medicine  *domain.Medicine
-		batch     *domain.Batch
-		reqItem   dto.CreateSaleItemRequest
-		unitPrice float64
+		medicine      *domain.Medicine
+		batch         *domain.Batch
+		reqItem       dto.CreateSaleItemRequest
+		unitPrice     float64
 		unitsConsumed int
-		subtotal  float64
-		taxAmount float64
+		subtotal      float64
+		taxAmount     float64
 	}
 
 	works := make([]itemWork, 0, len(req.Items))

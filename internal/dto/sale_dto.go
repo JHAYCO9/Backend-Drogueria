@@ -18,16 +18,17 @@ type AddSaleItemRequest struct {
 }
 
 type SaleItemResponse struct {
-	ID           string  `json:"id"`
-	MedicineID   string  `json:"medicine_id"`
-	MedicineName string  `json:"medicine_name"`
-	BatchID      string  `json:"batch_id"`
-	BatchCode    string  `json:"batch_code"`
-	Quantity     int     `json:"quantity"`
-	SaleUnit     string  `json:"sale_unit"`
-	UnitPrice    float64 `json:"unit_price"`
-	Subtotal     float64 `json:"subtotal"`
-	TaxAmount    float64 `json:"tax_amount"`
+	ID               string  `json:"id"`
+	MedicineID       string  `json:"medicine_id"`
+	MedicineName     string  `json:"medicine_name"`
+	BatchID          string  `json:"batch_id"`
+	BatchCode        string  `json:"batch_code"`
+	Quantity         int     `json:"quantity"`
+	SaleUnit         string  `json:"sale_unit"`
+	UnitPrice        float64 `json:"unit_price"`
+	Subtotal         float64 `json:"subtotal"`
+	TaxAmount        float64 `json:"tax_amount"`
+	ReturnedQuantity int     `json:"returned_quantity"`
 }
 
 type SaleResponse struct {
@@ -63,6 +64,7 @@ type SaleListItem struct {
 	PaymentMethod *string `json:"payment_method"`
 	CashierName   string  `json:"cashier_name"`
 	CreatedAt     string  `json:"created_at"`
+	HasReturns    bool    `json:"has_returns"`
 }
 
 // SalesDateRangeSummary cubre RF-047: número de ventas, total vendido y

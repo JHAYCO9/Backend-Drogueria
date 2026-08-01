@@ -46,10 +46,24 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 	cashRepo := repository.NewCashRegisterRepository(db)
 	saleRepo := repository.NewSaleRepository(db)
+	cashMovementRepo := repository.NewCashMovementRepository(db)
+	cashService := service.NewCashRegisterService(cashRepo, cashMovementRepo, saleRepo, userRepo)
+	cashHandler := handler.NewCashRegisterHandler(cashService, userRepo)
+
+	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo, cashMovementRepo)
+
+	returnRepo := repository.NewReturnRepository(db)
+	returnService := service.NewReturnService(db, returnRepo, saleRepo, batchRepo, movementRepo, medicineRepo, userRepo, auditRepo)
+	returnHandler := handler.NewReturnHandler(returnService)
 
 	// SaleService actualizado con db y auditRepo (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
-	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo)
-	saleHandler := handler.NewSaleHandler(saleService, medicineRepo, userRepo)
+	saleHandler := handler.NewSaleHandler(saleService, medicineRepo, returnRepo, userRepo)
+
+	dashboardService := service.NewDashboardService(saleRepo, medicineRepo, batchRepo, cashRepo, cashMovementRepo, movementRepo, userRepo)
+	dashboardHandler := handler.NewDashboardHandler(dashboardService)
+
+	reporteZService := service.NewReporteZService(cashRepo, saleRepo, medicineRepo)
+	reporteZHandler := handler.NewReporteZHandler(reporteZService)
 
 	api := r.Group("/api/v1")
 	{
@@ -85,19 +99,31 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 			protected.POST("/sync/events", syncHandler.PushEvent)
 
+			protected.GET("/dashboard/summary", dashboardHandler.GetSummary)
+
 			// Módulo de Ventas e Inventario (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
-			protected.POST("/sales", saleHandler.StartSale)                             // RF-031
-			protected.GET("/sales/:id", saleHandler.GetSale)                            // RF-045: Consultar detalle de una venta
-			protected.POST("/sales/:id/items", saleHandler.AddItem)                    // RF-033: Agregar ítem
-			protected.PUT("/sales/:id/items/:itemId", saleHandler.UpdateItem)          // RF-034: Modificar cantidad de un medicamento
-			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)       // RF-035: Eliminar ítem
-			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)                // RF-036
-			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)       // RF-039 + RF-041 + RF-042
-			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi)     // RF-040 + RF-041 + RF-042
+			protected.POST("/sales", saleHandler.StartSale)                        // RF-031
+			protected.GET("/sales/:id", saleHandler.GetSale)                       // RF-045: Consultar detalle de una venta
+			protected.POST("/sales/:id/items", saleHandler.AddItem)                // RF-033: Agregar ítem
+			protected.PUT("/sales/:id/items/:itemId", saleHandler.UpdateItem)      // RF-034: Modificar cantidad de un medicamento
+			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)   // RF-035: Eliminar ítem
+			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)            // RF-036
+			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)   // RF-039 + RF-041 + RF-042
+			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi) // RF-040 + RF-041 + RF-042
 			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
+
+			protected.POST("/cash-register/open", cashHandler.OpenCashRegister)   // RF-048
+			protected.GET("/cash-register/status", cashHandler.GetStatus)         // RF-049
+			protected.POST("/cash-register/close", cashHandler.CloseCashRegister) // RF-052+053+054
+			protected.GET("/cash-register/movements", cashHandler.GetMovements)   // RF-051
 
 			// Venta atómica (una sola llamada HTTP - RF-037, RF-038, RF-042, RNF-008)
 			protected.POST("/sales/atomic", saleHandler.CreateAtomicSale)
+
+			protected.GET("/cash-register/:id/reporte-z", reporteZHandler.GetReporteZ)
+
+			protected.POST("/sales/:id/returns", returnHandler.RegisterReturn)
+			protected.GET("/returns", returnHandler.ListReturns) // RF-093
 
 			admin := protected.Group("/")
 			admin.Use(middleware.RequireRole("Administrador"))

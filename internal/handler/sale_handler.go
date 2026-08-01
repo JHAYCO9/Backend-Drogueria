@@ -19,13 +19,14 @@ type SaleHandler struct {
 	medicineRepo interface {
 		FindByID(id uuid.UUID) (*domain.Medicine, error)
 	}
-	userRepo repository.UserRepository
+	returnRepo repository.ReturnRepository
+	userRepo   repository.UserRepository
 }
 
 func NewSaleHandler(saleService service.SaleService, medicineRepo interface {
 	FindByID(id uuid.UUID) (*domain.Medicine, error)
-}, userRepo repository.UserRepository) *SaleHandler {
-	return &SaleHandler{saleService: saleService, medicineRepo: medicineRepo, userRepo: userRepo}
+}, returnRepo repository.ReturnRepository, userRepo repository.UserRepository) *SaleHandler {
+	return &SaleHandler{saleService: saleService, medicineRepo: medicineRepo, returnRepo: returnRepo, userRepo: userRepo}
 }
 
 // GetReceipt cubre RF-043.
@@ -125,10 +126,12 @@ func (h *SaleHandler) toSaleListItems(sales []domain.Sale) []dto.SaleListItem {
 		if u, err := h.userRepo.FindByID(sale.UserID); err == nil {
 			cashierName = u.FullName
 		}
+		hasReturns, _ := h.returnRepo.ExistsForSale(sale.ID)
 		items = append(items, dto.SaleListItem{
 			ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
 			TotalAmount: sale.TotalAmount, PaymentMethod: sale.PaymentMethod,
 			CashierName: cashierName, CreatedAt: sale.CreatedAt.Format(time.RFC3339),
+			HasReturns: hasReturns,
 		})
 	}
 	return items
@@ -178,10 +181,13 @@ func (h *SaleHandler) buildSaleResponse(saleID uuid.UUID) (*dto.SaleResponse, er
 		if m, err := h.medicineRepo.FindByID(it.MedicineID); err == nil {
 			medicineName = m.Name
 		}
+		returnedQty, _ := h.returnRepo.SumReturnedForSaleItem(it.ID)
+
 		itemResponses = append(itemResponses, dto.SaleItemResponse{
 			ID: it.ID.String(), MedicineID: it.MedicineID.String(), MedicineName: medicineName,
 			BatchID: it.BatchID.String(), Quantity: it.Quantity, SaleUnit: it.SaleUnit,
 			UnitPrice: it.UnitPrice, Subtotal: it.Subtotal, TaxAmount: it.TaxAmount,
+			ReturnedQuantity: returnedQty,
 		})
 		totalTax += it.TaxAmount
 	}
