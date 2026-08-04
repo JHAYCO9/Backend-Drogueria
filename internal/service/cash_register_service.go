@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,10 +48,23 @@ type CashStatusDetail struct {
 	MovimientosManuales    []domain.CashMovement
 }
 
+// CashMovementFilterInput es el filtro del servicio para RF-051.
 type CashMovementFilterInput struct {
 	UserID *uuid.UUID
 	From   *time.Time
 	To     *time.Time
+}
+
+// ClosedRegisterDetail es el resultado enriquecido para RF-056.
+type ClosedRegisterDetail struct {
+	Register         domain.CashRegister
+	OpenedByName     string
+	ClosedByName     string
+	TotalVentasCash  float64
+	TotalOtros       float64
+	TotalIngresos    float64
+	TotalEgresos     float64
+	SaldoTeorico     float64
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -58,14 +72,14 @@ type CashMovementFilterInput struct {
 // ─────────────────────────────────────────────────────────────
 
 type CashRegisterService interface {
-	OpenCashRegister(userID uuid.UUID, openingAmount float64) (*domain.CashRegister, error)                  // RF-016 + RNF-008 + RNF-012
-	GetStatus() (*CashRegisterStatus, error)                                                                  // RF-049 (existente — usada por el handler original)
-	GetDetailedStatus() (*CashStatusDetail, error)                                                            // RF-019
-	CloseCashRegister(userID uuid.UUID, countedAmount float64, reason string) (*domain.CashRegister, error)  // RF-017 + RNF-011 + RNF-012
+	OpenCashRegister(userID uuid.UUID, openingAmount float64) (*domain.CashRegister, error)                       // RF-016 + RNF-008 + RNF-012
+	GetStatus() (*CashRegisterStatus, error)                                                                       // RF-049 (existente)
+	GetDetailedStatus() (*CashStatusDetail, error)                                                                 // RF-019
+	CloseCashRegister(userID uuid.UUID, countedAmount float64, reason string) (*domain.CashRegister, error)        // RF-017 + RNF-011 + RNF-012
 	RegisterManualMovement(userID uuid.UUID, movType, reason string, amount float64) (*domain.CashMovement, error) // RF-018 + RNF-010
-	ListMovements(filter CashMovementFilterInput) ([]domain.CashMovement, error)                              // RF-051
-	// RequireCashOpenForUser es usado por el middleware RNF-009: retorna la caja
-	// abierta o un error si no existe ninguna (verificación global).
+	ListMovements(filter CashMovementFilterInput) ([]domain.CashMovement, error)                                   // RF-051
+	ListClosedRegisters(from, to *time.Time, userID *uuid.UUID) ([]ClosedRegisterDetail, error)                    // RF-056
+	// RequireCashOpenForUser es usado por el middleware RNF-009.
 	RequireCashOpenForUser() (*domain.CashRegister, error)
 }
 
@@ -79,6 +93,7 @@ type cashRegisterService struct {
 	movementRepo repository.CashMovementRepository
 	saleRepo     repository.SaleRepository
 	userRepo     repository.UserRepository
+	auditRepo    repository.AuditRepository
 }
 
 func NewCashRegisterService(
@@ -86,8 +101,9 @@ func NewCashRegisterService(
 	movementRepo repository.CashMovementRepository,
 	saleRepo repository.SaleRepository,
 	userRepo repository.UserRepository,
+	auditRepo repository.AuditRepository,
 ) CashRegisterService {
-	return &cashRegisterService{cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo, userRepo: userRepo}
+	return &cashRegisterService{cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo, userRepo: userRepo, auditRepo: auditRepo}
 }
 
 // NewCashRegisterServiceWithDB construye el servicio con acceso a la BD para
@@ -98,8 +114,9 @@ func NewCashRegisterServiceWithDB(
 	movementRepo repository.CashMovementRepository,
 	saleRepo repository.SaleRepository,
 	userRepo repository.UserRepository,
+	auditRepo repository.AuditRepository,
 ) CashRegisterService {
-	return &cashRegisterService{db: db, cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo, userRepo: userRepo}
+	return &cashRegisterService{db: db, cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo, userRepo: userRepo, auditRepo: auditRepo}
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -160,6 +177,10 @@ func (s *cashRegisterService) OpenCashRegister(userID uuid.UUID, openingAmount f
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
+	}
+
+	if s.auditRepo != nil {
+		_ = s.auditRepo.Log(userID, "cash_register_open", fmt.Sprintf("Apertura de caja ID: %s con monto inicial de %.2f", cr.ID.String(), openingAmount), "")
 	}
 
 	return cr, nil
@@ -368,6 +389,23 @@ func (s *cashRegisterService) closeWithTx(userID uuid.UUID, countedAmount float6
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+
+	if s.auditRepo != nil {
+		discrepancy := "NONE"
+		if cr.DiscrepancyType != nil {
+			discrepancy = *cr.DiscrepancyType
+		}
+		expected := 0.0
+		if cr.ExpectedAmount != nil {
+			expected = *cr.ExpectedAmount
+		}
+		diff := 0.0
+		if cr.DifferenceAmount != nil {
+			diff = *cr.DifferenceAmount
+		}
+		_ = s.auditRepo.Log(userID, "cash_register_close", fmt.Sprintf("Cierre de caja ID: %s. Esperado: %.2f, Contado: %.2f, Diferencia: %.2f (%s)", cr.ID.String(), expected, countedAmount, diff, discrepancy), "")
+	}
+
 	return cr, nil
 }
 
@@ -427,6 +465,11 @@ func (s *cashRegisterService) RegisterManualMovement(
 	if err := s.movementRepo.Create(mov); err != nil {
 		return nil, err
 	}
+
+	if s.auditRepo != nil {
+		_ = s.auditRepo.Log(userID, "cash_movement_created", fmt.Sprintf("Movimiento manual de caja (%s) por %.2f. Motivo: %s", movType, amount, reason), "")
+	}
+
 	return mov, nil
 }
 
@@ -476,4 +519,51 @@ func (s *cashRegisterService) calculateBalancesLegacy(cashRegisterID uuid.UUID, 
 		}
 	}
 	return expectedCash, totalNequi, nil
+}
+
+// ─────────────────────────────────────────────────────────────
+// RF-056: Historial de cierres de caja con filtros
+// ─────────────────────────────────────────────────────────────
+
+// ListClosedRegisters retorna el historial de cajas cerradas con totales calculados.
+// Filtros: from/to por fecha de cierre, userID por quien cerró.
+func (s *cashRegisterService) ListClosedRegisters(from, to *time.Time, userID *uuid.UUID) ([]ClosedRegisterDetail, error) {
+	registers, err := s.cashRepo.FindClosed(from, to, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ClosedRegisterDetail, 0, len(registers))
+	for _, cr := range registers {
+		detail := ClosedRegisterDetail{Register: cr}
+
+		// Nombre del usuario que abrió la caja
+		if u, err := s.userRepo.FindByID(cr.OpenedBy); err == nil {
+			detail.OpenedByName = u.FullName
+		}
+		// Nombre del usuario que cerró la caja
+		if cr.ClosedBy != nil {
+			if u, err := s.userRepo.FindByID(*cr.ClosedBy); err == nil {
+				detail.ClosedByName = u.FullName
+			}
+		}
+
+		// Totales calculados para la sesión
+		if cash, err := s.saleRepo.SumCashSalesByCashRegister(cr.ID); err == nil {
+			detail.TotalVentasCash = cash
+		}
+		if otros, err := s.saleRepo.SumOtherSalesByCashRegister(cr.ID); err == nil {
+			detail.TotalOtros = otros
+		}
+		if ingresos, err := s.movementRepo.SumByTypeAndSession(cr.ID, "ingreso_manual"); err == nil {
+			detail.TotalIngresos = ingresos
+		}
+		if egresos, err := s.movementRepo.SumByTypeAndSession(cr.ID, "egreso_manual"); err == nil {
+			detail.TotalEgresos = egresos
+		}
+		detail.SaldoTeorico = cr.OpeningAmount + detail.TotalVentasCash + detail.TotalIngresos - detail.TotalEgresos
+
+		result = append(result, detail)
+	}
+	return result, nil
 }

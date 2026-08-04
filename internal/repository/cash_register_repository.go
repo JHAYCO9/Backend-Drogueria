@@ -15,6 +15,7 @@ type CashRegisterRepository interface {
 	FindOpen() (*domain.CashRegister, error)
 	FindOpenByUser(userID uuid.UUID) (*domain.CashRegister, error) // RNF-008: verifica por usuario
 	FindByID(id uuid.UUID) (*domain.CashRegister, error)
+	FindClosed(from, to *time.Time, userID *uuid.UUID) ([]domain.CashRegister, error) // RF-056
 	Update(cr *domain.CashRegister) error
 	UpdateTx(tx *gorm.DB, cr *domain.CashRegister) error // RNF-012: cierre atómico
 	CountClosedUpTo(closedAt time.Time) (int64, error)
@@ -86,4 +87,21 @@ func (r *cashRegisterRepository) CountClosedUpTo(closedAt time.Time) (int64, err
 	err := r.db.Model(&domain.CashRegister{}).
 		Where("status = ? AND closed_at <= ?", "cerrada", closedAt).Count(&count).Error
 	return count, err
+}
+
+// FindClosed cubre RF-056: consultar historial de cierres con filtros por fecha y usuario.
+func (r *cashRegisterRepository) FindClosed(from, to *time.Time, userID *uuid.UUID) ([]domain.CashRegister, error) {
+	var registers []domain.CashRegister
+	query := r.db.Where("status = ?", "cerrada")
+	if from != nil {
+		query = query.Where("closed_at >= ?", *from)
+	}
+	if to != nil {
+		query = query.Where("closed_at <= ?", *to)
+	}
+	if userID != nil {
+		query = query.Where("closed_by = ?", *userID)
+	}
+	err := query.Order("closed_at desc").Find(&registers).Error
+	return registers, err
 }

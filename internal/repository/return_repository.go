@@ -9,6 +9,8 @@ import (
 
 type ReturnRepository interface {
 	CreateTx(tx *gorm.DB, r *domain.Return) error
+	UpdateTx(tx *gorm.DB, r *domain.Return) error
+	FindByID(id uuid.UUID) (*domain.Return, error)
 	FindAll() ([]domain.Return, error) // RF-093
 	SumReturnedForSaleItem(saleItemID uuid.UUID) (int, error)
 	ExistsForSale(saleID uuid.UUID) (bool, error)
@@ -26,7 +28,20 @@ func (r *returnRepository) CreateTx(tx *gorm.DB, ret *domain.Return) error {
 	return tx.Create(ret).Error
 }
 
-// FindAll cubre RF-093: historial completo de devoluciones.
+func (r *returnRepository) UpdateTx(tx *gorm.DB, ret *domain.Return) error {
+	return tx.Save(ret).Error
+}
+
+func (r *returnRepository) FindByID(id uuid.UUID) (*domain.Return, error) {
+	var ret domain.Return
+	err := r.db.Where("id = ?", id).First(&ret).Error
+	if err != nil {
+		return nil, err
+	}
+	return &ret, nil
+}
+
+// FindAll cubre RF-093: historial completo de devoluciones (RNF-027 permanencia).
 func (r *returnRepository) FindAll() ([]domain.Return, error) {
 	var returns []domain.Return
 	err := r.db.Order("created_at desc").Find(&returns).Error
@@ -34,15 +49,19 @@ func (r *returnRepository) FindAll() ([]domain.Return, error) {
 }
 
 // SumReturnedForSaleItem evita que se devuelva más de lo que realmente
-// se vendió, sumando todo lo ya devuelto previamente para ese ítem.
+// se vendió, sumando todo lo devuelto no anulado previamente para ese ítem.
 func (r *returnRepository) SumReturnedForSaleItem(saleItemID uuid.UUID) (int, error) {
 	var total int
-	err := r.db.Model(&domain.Return{}).Where("sale_item_id = ?", saleItemID).
+	err := r.db.Model(&domain.Return{}).
+		Where("sale_item_id = ? AND (reason NOT LIKE '[ANULADA]%')", saleItemID).
 		Select("COALESCE(SUM(quantity), 0)").Scan(&total).Error
 	return total, err
 }
+
 func (r *returnRepository) ExistsForSale(saleID uuid.UUID) (bool, error) {
 	var count int64
-	err := r.db.Model(&domain.Return{}).Where("sale_id = ?", saleID).Count(&count).Error
+	err := r.db.Model(&domain.Return{}).
+		Where("sale_id = ? AND (reason NOT LIKE '[ANULADA]%')", saleID).
+		Count(&count).Error
 	return count > 0, err
 }

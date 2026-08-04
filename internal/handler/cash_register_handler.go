@@ -280,3 +280,94 @@ func (h *CashRegisterHandler) GetMovements(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
+
+// ─────────────────────────────────────────────────────────────
+// RF-056: GET /api/v1/cash-register/history
+// Consultar historial de cierres de caja (filtros: from, to, user_id)
+// ─────────────────────────────────────────────────────────────
+
+func (h *CashRegisterHandler) ListClosedRegisters(c *gin.Context) {
+	var from, to *time.Time
+	var userID *uuid.UUID
+
+	if fromStr := c.Query("from"); fromStr != "" {
+		t, err := time.Parse("2006-01-02", fromStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "formato de fecha 'from' inválido, use YYYY-MM-DD"})
+			return
+		}
+		from = &t
+	}
+	if toStr := c.Query("to"); toStr != "" {
+		t, err := time.Parse("2006-01-02", toStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "formato de fecha 'to' inválido, use YYYY-MM-DD"})
+			return
+		}
+		end := t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+		to = &end
+	}
+	if userIDStr := c.Query("user_id"); userIDStr != "" {
+		uid, err := uuid.Parse(userIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id inválido"})
+			return
+		}
+		userID = &uid
+	}
+
+	details, err := h.cashService.ListClosedRegisters(from, to, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo cargar el historial de cierres"})
+		return
+	}
+
+	response := make([]dto.ClosedRegisterResponse, 0, len(details))
+	for _, d := range details {
+		closedAtStr := ""
+		if d.Register.ClosedAt != nil {
+			closedAtStr = d.Register.ClosedAt.Format(time.RFC3339)
+		}
+		expectedAmount := 0.0
+		if d.Register.ExpectedAmount != nil {
+			expectedAmount = *d.Register.ExpectedAmount
+		}
+		countedAmount := 0.0
+		if d.Register.CountedAmount != nil {
+			countedAmount = *d.Register.CountedAmount
+		}
+		differenceAmount := 0.0
+		if d.Register.DifferenceAmount != nil {
+			differenceAmount = *d.Register.DifferenceAmount
+		}
+		discrepancyType := ""
+		if d.Register.DiscrepancyType != nil {
+			discrepancyType = *d.Register.DiscrepancyType
+		}
+		differenceReason := ""
+		if d.Register.DifferenceReason != nil {
+			differenceReason = *d.Register.DifferenceReason
+		}
+
+		response = append(response, dto.ClosedRegisterResponse{
+			ID:               d.Register.ID.String(),
+			OpenedAt:         d.Register.OpenedAt.Format(time.RFC3339),
+			ClosedAt:         closedAtStr,
+			OpenedByName:     d.OpenedByName,
+			ClosedByName:     d.ClosedByName,
+			OpeningAmount:    d.Register.OpeningAmount,
+			CountedAmount:    countedAmount,
+			ExpectedAmount:   expectedAmount,
+			DifferenceAmount: differenceAmount,
+			DiscrepancyType:  discrepancyType,
+			DifferenceReason: differenceReason,
+			TotalVentasEfectivo: d.TotalVentasCash,
+			TotalOtrosMedios:    d.TotalOtros,
+			TotalIngresos:       d.TotalIngresos,
+			TotalEgresos:        d.TotalEgresos,
+			SaldoTeorico:        d.SaldoTeorico,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}

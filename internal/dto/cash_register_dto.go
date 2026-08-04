@@ -117,3 +117,28 @@ type CashMovementResponse struct {
 	Username         string  `json:"username"`
 	CreatedAt        string  `json:"created_at"`
 }
+
+// ─────────────────────────────────────────────────────────────
+// RF-056: Historial de cierres de caja
+// ─────────────────────────────────────────────────────────────
+
+// ClosedRegisterResponse representa una sesión cerrada de caja con sus totales.
+type ClosedRegisterResponse struct {
+	ID               string  `json:"id"`
+	OpenedAt         string  `json:"opened_at"`
+	ClosedAt         string  `json:"closed_at"`
+	OpenedByName     string  `json:"opened_by_name"`
+	ClosedByName     string  `json:"closed_by_name"`
+	OpeningAmount    float64 `json:"opening_amount"`
+	CountedAmount    float64 `json:"counted_amount"`
+	ExpectedAmount   float64 `json:"expected_amount"`
+	DifferenceAmount float64 `json:"difference_amount"`
+	DiscrepancyType  string  `json:"discrepancy_type"`
+	DifferenceReason string  `json:"difference_reason,omitempty"`
+	// Totales de la sesión
+	TotalVentasEfectivo float64 `json:"total_ventas_efectivo"`
+	TotalOtrosMedios    float64 `json:"total_otros_medios"`
+	TotalIngresos       float64 `json:"total_ingresos_manuales"`
+	TotalEgresos        float64 `json:"total_egresos_manuales"`
+	SaldoTeorico        float64 `json:"saldo_teorico"`
+}

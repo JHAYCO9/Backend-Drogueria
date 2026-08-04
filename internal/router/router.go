@@ -48,8 +48,8 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	saleRepo := repository.NewSaleRepository(db)
 	cashMovementRepo := repository.NewCashMovementRepository(db)
 
-	// Sprint 4: servicio de caja con DB inyectada para transacciones atómicas (RNF-012).
-	cashService := service.NewCashRegisterServiceWithDB(db, cashRepo, cashMovementRepo, saleRepo, userRepo)
+	// Sprint 4: servicio de caja con DB e Inyección de auditRepo para auditoría y transacciones atómicas (RNF-012).
+	cashService := service.NewCashRegisterServiceWithDB(db, cashRepo, cashMovementRepo, saleRepo, userRepo, auditRepo)
 	cashHandler := handler.NewCashRegisterHandler(cashService, userRepo)
 
 	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo, cashMovementRepo)
@@ -118,33 +118,42 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 			// RF-019: Estado detallado del arqueo en tiempo real
 			protected.GET("/cash-register/status", cashHandler.GetDetailedStatus)
 			
+			// RF-056: Historial de cierres de caja (filtros: ?from=YYYY-MM-DD&to=YYYY-MM-DD&user_id=UUID)
+			protected.GET("/cash-register/history", cashHandler.ListClosedRegisters)
+			
 			protected.GET("/cash-register/:id/reporte-z", reporteZHandler.GetReporteZ)
 
 			// ────────────────────────────────────────────────────────────────────
-			// Módulo de Ventas e Inventario (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
-			// RNF-009: validación de caja abierta aplicada a inicio de venta y devoluciones.
-			// Nota: StartSale y CreateAtomicSale ya tienen la validación en el SaleService.
+			// Módulo de Ventas e Inventario
+			// RNF-010: el sistema no permite realizar ventas cuando la caja está cerrada.
+			// Se aplica middleware RequireCashOpen a todos los endpoints de creación/finalización.
 			// ────────────────────────────────────────────────────────────────────
-			protected.POST("/sales", saleHandler.StartSale)                        // RF-031
-			protected.GET("/sales/:id", saleHandler.GetSale)                       // RF-045: Consultar detalle de una venta
-			protected.POST("/sales/:id/items", saleHandler.AddItem)                // RF-033: Agregar ítem
-			protected.PUT("/sales/:id/items/:itemId", saleHandler.UpdateItem)      // RF-034: Modificar cantidad de un medicamento
-			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)   // RF-035: Eliminar ítem
-			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)            // RF-036
-			protected.POST("/sales/:id/finalize/cash", saleHandler.FinalizeCash)   // RF-039 + RF-041 + RF-042
-			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi) // RF-040 + RF-041 + RF-042
+			protected.POST("/sales", middleware.RequireCashOpen(cashRepo), saleHandler.StartSale)                                               // RF-031 + RNF-010
+			protected.GET("/sales/:id", saleHandler.GetSale)                                                                                   // RF-045
+			protected.POST("/sales/:id/items", middleware.RequireCashOpen(cashRepo), saleHandler.AddItem)                                      // RF-033 + RNF-010
+			protected.PUT("/sales/:id/items/:itemId", middleware.RequireCashOpen(cashRepo), saleHandler.UpdateItem)                            // RF-034 + RNF-010
+			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)                                                               // RF-035
+			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)                                                                        // RF-036
+			protected.POST("/sales/:id/finalize/cash", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeCash)                         // RF-039 + RNF-010
+			protected.POST("/sales/:id/finalize/nequi", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeNequi)                       // RF-040 + RNF-010
 			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
 
-			// Venta atómica (una sola llamada HTTP - RF-037, RF-038, RF-042, RNF-008)
-			protected.POST("/sales/atomic", saleHandler.CreateAtomicSale)
+			// Venta atómica (RNF-010: también requiere caja abierta)
+			protected.POST("/sales/atomic", middleware.RequireCashOpen(cashRepo), saleHandler.CreateAtomicSale)
 
-			// RF-089/091/095 + RNF-009 (devoluciones): middleware RequireCashOpen aplicado aquí
-			protected.POST("/sales/:id/returns", middleware.RequireCashOpen(cashRepo), returnHandler.RegisterReturn)
-			protected.GET("/returns", returnHandler.ListReturns) // RF-093
+			// RF-093: Consultar historial de devoluciones (RNF-027 permanencia)
+			protected.GET("/returns", returnHandler.ListReturns)
 
 			admin := protected.Group("/")
 			admin.Use(middleware.RequireRole("Administrador"))
 			{
+				// RNF-029: Solo Administrador puede registrar, modificar o anular devoluciones
+				// RF-089/091/095 + RNF-009 + RNF-029: registrar devolución
+				admin.POST("/sales/:id/returns", middleware.RequireCashOpen(cashRepo), returnHandler.RegisterReturn)
+				// RF-094 + RNF-027 + RNF-029: anular devolución y revertir inventario
+				admin.POST("/returns/:id/void", returnHandler.VoidReturn)
+				admin.POST("/returns/:id/anular", returnHandler.VoidReturn)
+
 				// Sprint 1 - endpoints existentes
 				admin.POST("/medicines", medicineHandler.RegisterMedicine)              // RF-011
 				admin.PATCH("/medicines/:id/min-stock", medicineHandler.UpdateMinStock) // RF-020

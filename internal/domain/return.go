@@ -15,10 +15,16 @@ type Return struct {
 	SaleItemID uuid.UUID `gorm:"not null"`
 	MedicineID uuid.UUID `gorm:"not null"`
 	BatchID    uuid.UUID `gorm:"not null"`
-	Quantity   int       `gorm:"not null"` // unidades sueltas devueltas (mismo criterio que UnitsConsumed)
+	Quantity   int       `gorm:"not null"` // unidades sueltas devueltas
 	Reason     string    `gorm:"not null"`
 	UserID     uuid.UUID `gorm:"not null"`
 	CreatedAt  time.Time
+
+	// Campos virtuales (gorm:"-") para ser 100% compatibles con la BD de PostgreSQL existente
+	IsVoided     bool       `gorm:"-"`
+	VoidedReason string     `gorm:"-"`
+	VoidedAt     *time.Time `gorm:"-"`
+	VoidedBy     *uuid.UUID `gorm:"-"`
 }
 
 func (Return) TableName() string { return "returns" }
