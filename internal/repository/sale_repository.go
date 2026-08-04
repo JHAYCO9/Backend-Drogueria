@@ -38,6 +38,9 @@ type SaleRepository interface {
 	FindWithFilters(params SaleFilterParams) ([]domain.Sale, int64, error)
 	FindByCashRegister(cashRegisterID uuid.UUID) ([]domain.Sale, error)
 	FindTodayFinalized(from, to time.Time) ([]domain.Sale, error)
+	// RF-019/RF-017: sumas para el arqueo de caja.
+	SumCashSalesByCashRegister(cashRegisterID uuid.UUID) (float64, error)
+	SumOtherSalesByCashRegister(cashRegisterID uuid.UUID) (float64, error)
 }
 
 type saleRepository struct {
@@ -199,4 +202,28 @@ func (r *saleRepository) FindWithFilters(params SaleFilterParams) ([]domain.Sale
 
 	err := query.Order("created_at DESC").Limit(pageSize).Offset(offset).Find(&sales).Error
 	return sales, total, err
+}
+
+// SumCashSalesByCashRegister calcula el total de ventas en EFECTIVO dentro
+// de una sesión de caja (status='finalizada' y payment_method='efectivo').
+// Usado en la fórmula del arqueo: Monto_Esperado = Inicial + Ventas_Efectivo + Ingresos - Egresos.
+func (r *saleRepository) SumCashSalesByCashRegister(cashRegisterID uuid.UUID) (float64, error) {
+	var total float64
+	err := r.db.Model(&domain.Sale{}).
+		Where("cash_register_id = ? AND status = ? AND payment_method = ?",
+			cashRegisterID, "finalizada", "efectivo").
+		Select("COALESCE(SUM(total_amount), 0)").Scan(&total).Error
+	return total, err
+}
+
+// SumOtherSalesByCashRegister calcula el total de ventas POR OTROS MEDIOS
+// (Nequi, transferencia, etc.) dentro de una sesión de caja.
+// Este valor es informativo: ese dinero no entra físico a la caja.
+func (r *saleRepository) SumOtherSalesByCashRegister(cashRegisterID uuid.UUID) (float64, error) {
+	var total float64
+	err := r.db.Model(&domain.Sale{}).
+		Where("cash_register_id = ? AND status = ? AND payment_method != ?",
+			cashRegisterID, "finalizada", "efectivo").
+		Select("COALESCE(SUM(total_amount), 0)").Scan(&total).Error
+	return total, err
 }

@@ -18,6 +18,7 @@ func main() {
 		log.Fatalf("error conectando a la base de datos: %v", err)
 	}
 
+
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 

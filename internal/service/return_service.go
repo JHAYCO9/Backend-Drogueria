@@ -36,27 +36,37 @@ type returnService struct {
 	medicineRepo repository.MedicineRepository
 	userRepo     repository.UserRepository
 	auditRepo    repository.AuditRepository
+	cashRepo     repository.CashRegisterRepository // RNF-009: validar caja abierta
 }
 
 func NewReturnService(
 	db *gorm.DB, returnRepo repository.ReturnRepository, saleRepo repository.SaleRepository,
 	batchRepo repository.BatchRepository, movementRepo repository.InventoryMovementRepository,
-	medicineRepo repository.MedicineRepository, userRepo repository.UserRepository, auditRepo repository.AuditRepository,
+	medicineRepo repository.MedicineRepository, userRepo repository.UserRepository,
+	auditRepo repository.AuditRepository, cashRepo repository.CashRegisterRepository,
 ) ReturnService {
 	return &returnService{
 		db: db, returnRepo: returnRepo, saleRepo: saleRepo, batchRepo: batchRepo,
-		movementRepo: movementRepo, medicineRepo: medicineRepo, userRepo: userRepo, auditRepo: auditRepo,
+		movementRepo: movementRepo, medicineRepo: medicineRepo, userRepo: userRepo,
+		auditRepo: auditRepo, cashRepo: cashRepo,
 	}
 }
 
 // RegisterReturn cubre RF-089 (registrar devolución), RF-091 (reintegrar
 // existencias al lote correspondiente y registrar el movimiento), RF-095
 // (auditoría) y RNF-028 (todo dentro de una sola transacción atómica).
+// RNF-009: valida que exista una caja abierta antes de permitir la devolución.
 func (s *returnService) RegisterReturn(saleID, saleItemID, userID uuid.UUID, quantity int, reason string) (*domain.Return, error) {
+	// RNF-009: no se puede registrar una devolución sin caja abierta.
+	if _, err := s.cashRepo.FindOpen(); err != nil {
+		return nil, ErrNoCashOpen
+	}
+
 	sale, err := s.saleRepo.FindByID(saleID)
 	if err != nil {
 		return nil, ErrSaleNotFound
 	}
+
 
 	item, err := s.saleRepo.FindItemByID(saleItemID)
 	if err != nil || item.SaleID != saleID {

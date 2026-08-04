@@ -51,6 +51,9 @@ func (h *ReturnHandler) RegisterReturn(c *gin.Context) {
 	if err != nil {
 		log.Printf("error registrando devolución: %v", err)
 		switch err {
+		case service.ErrNoCashOpen:
+			// RNF-009: no se permite devolver sin caja abierta.
+			c.JSON(http.StatusForbidden, gin.H{"error": "No se pueden realizar operaciones de devolución sin una caja abierta."})
 		case service.ErrSaleNotFound, service.ErrSaleItemNotBelongToSale:
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case service.ErrReturnExceedsQuantity:

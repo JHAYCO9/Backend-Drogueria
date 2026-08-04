@@ -47,13 +47,16 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	cashRepo := repository.NewCashRegisterRepository(db)
 	saleRepo := repository.NewSaleRepository(db)
 	cashMovementRepo := repository.NewCashMovementRepository(db)
-	cashService := service.NewCashRegisterService(cashRepo, cashMovementRepo, saleRepo, userRepo)
+
+	// Sprint 4: servicio de caja con DB inyectada para transacciones atómicas (RNF-012).
+	cashService := service.NewCashRegisterServiceWithDB(db, cashRepo, cashMovementRepo, saleRepo, userRepo)
 	cashHandler := handler.NewCashRegisterHandler(cashService, userRepo)
 
 	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo, cashMovementRepo)
 
 	returnRepo := repository.NewReturnRepository(db)
-	returnService := service.NewReturnService(db, returnRepo, saleRepo, batchRepo, movementRepo, medicineRepo, userRepo, auditRepo)
+	// Sprint 4: se agrega cashRepo al returnService para RNF-009.
+	returnService := service.NewReturnService(db, returnRepo, saleRepo, batchRepo, movementRepo, medicineRepo, userRepo, auditRepo, cashRepo)
 	returnHandler := handler.NewReturnHandler(returnService)
 
 	// SaleService actualizado con db y auditRepo (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
@@ -101,7 +104,27 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 			protected.GET("/dashboard/summary", dashboardHandler.GetSummary)
 
+			// ────────────────────────────────────────────────────────────────────
+			// Módulo de Caja — Sprint 4 (Integrado sobre las rutas existentes)
+			// ────────────────────────────────────────────────────────────────────
+			protected.POST("/cash-register/open", cashHandler.OpenCashRegister)   // RF-016 / RNF-008 / RNF-012
+			protected.POST("/cash-register/close", cashHandler.CloseCashRegister) // RF-017 / RNF-011 / RNF-012
+			
+			// RF-018: Registrar movimiento manual (POST)
+			protected.POST("/cash-register/movements", cashHandler.RegisterManualMovement)
+			// RF-051: Listar movimientos (GET - existente)
+			protected.GET("/cash-register/movements", cashHandler.GetMovements)
+			
+			// RF-019: Estado detallado del arqueo en tiempo real
+			protected.GET("/cash-register/status", cashHandler.GetDetailedStatus)
+			
+			protected.GET("/cash-register/:id/reporte-z", reporteZHandler.GetReporteZ)
+
+			// ────────────────────────────────────────────────────────────────────
 			// Módulo de Ventas e Inventario (RF-034, RF-037, RF-038, RF-042, RF-044, RF-045, RF-046)
+			// RNF-009: validación de caja abierta aplicada a inicio de venta y devoluciones.
+			// Nota: StartSale y CreateAtomicSale ya tienen la validación en el SaleService.
+			// ────────────────────────────────────────────────────────────────────
 			protected.POST("/sales", saleHandler.StartSale)                        // RF-031
 			protected.GET("/sales/:id", saleHandler.GetSale)                       // RF-045: Consultar detalle de una venta
 			protected.POST("/sales/:id/items", saleHandler.AddItem)                // RF-033: Agregar ítem
@@ -112,17 +135,11 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 			protected.POST("/sales/:id/finalize/nequi", saleHandler.FinalizeNequi) // RF-040 + RF-041 + RF-042
 			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
 
-			protected.POST("/cash-register/open", cashHandler.OpenCashRegister)   // RF-048
-			protected.GET("/cash-register/status", cashHandler.GetStatus)         // RF-049
-			protected.POST("/cash-register/close", cashHandler.CloseCashRegister) // RF-052+053+054
-			protected.GET("/cash-register/movements", cashHandler.GetMovements)   // RF-051
-
 			// Venta atómica (una sola llamada HTTP - RF-037, RF-038, RF-042, RNF-008)
 			protected.POST("/sales/atomic", saleHandler.CreateAtomicSale)
 
-			protected.GET("/cash-register/:id/reporte-z", reporteZHandler.GetReporteZ)
-
-			protected.POST("/sales/:id/returns", returnHandler.RegisterReturn)
+			// RF-089/091/095 + RNF-009 (devoluciones): middleware RequireCashOpen aplicado aquí
+			protected.POST("/sales/:id/returns", middleware.RequireCashOpen(cashRepo), returnHandler.RegisterReturn)
 			protected.GET("/returns", returnHandler.ListReturns) // RF-093
 
 			admin := protected.Group("/")
