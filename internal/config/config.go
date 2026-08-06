@@ -8,14 +8,8 @@ import (
 )
 
 type Config struct {
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSSLMode  string
-	JWTSecret  string
-	ServerPort string
+	DBHost, DBPort, DBUser, DBPassword, DBName, DBSSLMode string
+	JWTSecret, ServerPort                                 string
 }
 
 func Load() *Config {
@@ -29,7 +23,7 @@ func Load() *Config {
 		DBUser:     getEnv("DB_USER", ""),
 		DBPassword: getEnv("DB_PASSWORD", ""),
 		DBName:     getEnv("DB_NAME", "defaultdb"),
-		DBSSLMode:  getEnv("DB_SSLMODE", "require"),
+		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
 		JWTSecret:  getEnv("JWT_SECRET", ""),
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 	}

@@ -47,9 +47,12 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	cashRepo := repository.NewCashRegisterRepository(db)
 	saleRepo := repository.NewSaleRepository(db)
 	cashMovementRepo := repository.NewCashMovementRepository(db)
+	reporteZService := service.NewReporteZService(cashRepo, saleRepo, medicineRepo)
 
 	// Sprint 4: servicio de caja con DB e Inyección de auditRepo para auditoría y transacciones atómicas (RNF-012).
-	cashService := service.NewCashRegisterServiceWithDB(db, cashRepo, cashMovementRepo, saleRepo, userRepo, auditRepo)
+	cashService := service.NewCashRegisterService(
+		db, cashRepo, cashMovementRepo, saleRepo, userRepo, auditRepo, reporteZService,
+	)
 	cashHandler := handler.NewCashRegisterHandler(cashService, userRepo)
 
 	saleService := service.NewSaleService(db, saleRepo, cashRepo, medicineRepo, batchRepo, movementRepo, userRepo, auditRepo, cashMovementRepo)
@@ -65,8 +68,22 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 	dashboardService := service.NewDashboardService(saleRepo, medicineRepo, batchRepo, cashRepo, cashMovementRepo, movementRepo, userRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardService)
 
-	reporteZService := service.NewReporteZService(cashRepo, saleRepo, medicineRepo)
 	reporteZHandler := handler.NewReporteZHandler(reporteZService)
+
+	reportService := service.NewReportService(saleRepo)
+	reportHandler := handler.NewReportHandler(reportService)
+
+	botRepo := repository.NewBotRepository(db)
+	botService := service.NewBotService(botRepo, medicineRepo, batchRepo, saleRepo, userRepo, cashRepo, reporteZService)
+	botHandler := handler.NewBotHandler(botService, userRepo)
+
+	systemSettingsRepo := repository.NewSystemSettingsRepository(db)
+	systemSettingsService := service.NewSystemSettingsService(systemSettingsRepo)
+	backupService := service.NewBackupService(db)
+	systemSettingsHandler := handler.NewSystemSettingsHandler(systemSettingsService, backupService)
+
+	saleExportService := service.NewSaleExportService(saleRepo, medicineRepo, userRepo)
+	saleExportHandler := handler.NewSaleExportHandler(saleExportService)
 
 	api := r.Group("/api/v1")
 	{
@@ -109,18 +126,18 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 			// ────────────────────────────────────────────────────────────────────
 			protected.POST("/cash-register/open", cashHandler.OpenCashRegister)   // RF-016 / RNF-008 / RNF-012
 			protected.POST("/cash-register/close", cashHandler.CloseCashRegister) // RF-017 / RNF-011 / RNF-012
-			
+
 			// RF-018: Registrar movimiento manual (POST)
 			protected.POST("/cash-register/movements", cashHandler.RegisterManualMovement)
 			// RF-051: Listar movimientos (GET - existente)
 			protected.GET("/cash-register/movements", cashHandler.GetMovements)
-			
+
 			// RF-019: Estado detallado del arqueo en tiempo real
 			protected.GET("/cash-register/status", cashHandler.GetDetailedStatus)
-			
+
 			// RF-056: Historial de cierres de caja (filtros: ?from=YYYY-MM-DD&to=YYYY-MM-DD&user_id=UUID)
 			protected.GET("/cash-register/history", cashHandler.ListClosedRegisters)
-			
+
 			protected.GET("/cash-register/:id/reporte-z", reporteZHandler.GetReporteZ)
 
 			// ────────────────────────────────────────────────────────────────────
@@ -128,14 +145,14 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 			// RNF-010: el sistema no permite realizar ventas cuando la caja está cerrada.
 			// Se aplica middleware RequireCashOpen a todos los endpoints de creación/finalización.
 			// ────────────────────────────────────────────────────────────────────
-			protected.POST("/sales", middleware.RequireCashOpen(cashRepo), saleHandler.StartSale)                                               // RF-031 + RNF-010
-			protected.GET("/sales/:id", saleHandler.GetSale)                                                                                   // RF-045
-			protected.POST("/sales/:id/items", middleware.RequireCashOpen(cashRepo), saleHandler.AddItem)                                      // RF-033 + RNF-010
-			protected.PUT("/sales/:id/items/:itemId", middleware.RequireCashOpen(cashRepo), saleHandler.UpdateItem)                            // RF-034 + RNF-010
-			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)                                                               // RF-035
-			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)                                                                        // RF-036
-			protected.POST("/sales/:id/finalize/cash", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeCash)                         // RF-039 + RNF-010
-			protected.POST("/sales/:id/finalize/nequi", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeNequi)                       // RF-040 + RNF-010
+			protected.POST("/sales", middleware.RequireCashOpen(cashRepo), saleHandler.StartSale)                        // RF-031 + RNF-010
+			protected.GET("/sales/:id", saleHandler.GetSale)                                                             // RF-045
+			protected.POST("/sales/:id/items", middleware.RequireCashOpen(cashRepo), saleHandler.AddItem)                // RF-033 + RNF-010
+			protected.PUT("/sales/:id/items/:itemId", middleware.RequireCashOpen(cashRepo), saleHandler.UpdateItem)      // RF-034 + RNF-010
+			protected.DELETE("/sales/:id/items/:itemId", saleHandler.RemoveItem)                                         // RF-035
+			protected.POST("/sales/:id/cancel", saleHandler.CancelSale)                                                  // RF-036
+			protected.POST("/sales/:id/finalize/cash", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeCash)   // RF-039 + RNF-010
+			protected.POST("/sales/:id/finalize/nequi", middleware.RequireCashOpen(cashRepo), saleHandler.FinalizeNequi) // RF-040 + RNF-010
 			protected.GET("/sales/:id/receipt", saleHandler.GetReceipt)
 
 			// Venta atómica (RNF-010: también requiere caja abierta)
@@ -143,6 +160,9 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 			// RF-093: Consultar historial de devoluciones (RNF-027 permanencia)
 			protected.GET("/returns", returnHandler.ListReturns)
+
+			protected.POST("/bot/query", botHandler.ExecuteCommand)   // RF-074/075/076/077
+			protected.GET("/bot/alerts", botHandler.GetPendingAlerts) // RF-071/072/073
 
 			admin := protected.Group("/")
 			admin.Use(middleware.RequireRole("Administrador"))
@@ -188,6 +208,27 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 				admin.POST("/sales/:id/void", saleHandler.VoidCompletedSale)
 				admin.POST("/sales/:id/anular", saleHandler.VoidCompletedSale)
 				admin.PUT("/sales/:id/anular", saleHandler.VoidCompletedSale)
+
+				admin.GET("/reports/daily-sales", reportHandler.GetDailySalesReport)     // RF-061
+				admin.GET("/reports/monthly-sales", reportHandler.GetMonthlySalesReport) // RF-062
+
+				admin.POST("/bot/access", botHandler.GrantAccess)        // RF-070
+				admin.DELETE("/bot/access/:id", botHandler.RevokeAccess) // RF-070
+				admin.GET("/bot/access", botHandler.ListAuthorized)      // RF-070
+				admin.GET("/bot/logs", botHandler.ListQueryLogs)         // RF-078
+				admin.GET("/bot/config", botHandler.GetConfig)           // RF-082
+				admin.PUT("/bot/config", botHandler.UpdateConfig)        // RF-082
+
+				admin.GET("/settings", systemSettingsHandler.Get)                                       // RF-079/080/081/083
+				admin.PUT("/settings/business", systemSettingsHandler.UpdateBusinessInfo)               // RF-079
+				admin.PUT("/settings/expiration", systemSettingsHandler.UpdateExpirationSettings)       // RF-080
+				admin.PUT("/settings/stock", systemSettingsHandler.UpdateStockSettings)                 // RF-081
+				admin.PUT("/settings/reporte-z-schedule", systemSettingsHandler.UpdateReporteZSchedule) // RF-083
+				admin.POST("/settings/backup", systemSettingsHandler.CreateBackup)                      // RF-084
+
+				admin.PUT("/settings/tax", systemSettingsHandler.UpdateTaxSettings) // RF-086
+				admin.GET("/sales/export", saleExportHandler.ExportSales)           // RF-087 + RF-088
+
 			}
 		}
 	}

@@ -57,14 +57,14 @@ type CashMovementFilterInput struct {
 
 // ClosedRegisterDetail es el resultado enriquecido para RF-056.
 type ClosedRegisterDetail struct {
-	Register         domain.CashRegister
-	OpenedByName     string
-	ClosedByName     string
-	TotalVentasCash  float64
-	TotalOtros       float64
-	TotalIngresos    float64
-	TotalEgresos     float64
-	SaldoTeorico     float64
+	Register        domain.CashRegister
+	OpenedByName    string
+	ClosedByName    string
+	TotalVentasCash float64
+	TotalOtros      float64
+	TotalIngresos   float64
+	TotalEgresos    float64
+	SaldoTeorico    float64
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ type ClosedRegisterDetail struct {
 // ─────────────────────────────────────────────────────────────
 
 type CashRegisterService interface {
-	OpenCashRegister(userID uuid.UUID, openingAmount float64) (*domain.CashRegister, error)                       // RF-016 + RNF-008 + RNF-012
+	OpenCashRegister(userID uuid.UUID, openingAmount float64) (*domain.CashRegister, error)                        // RF-016 + RNF-008 + RNF-012
 	GetStatus() (*CashRegisterStatus, error)                                                                       // RF-049 (existente)
 	GetDetailedStatus() (*CashStatusDetail, error)                                                                 // RF-019
 	CloseCashRegister(userID uuid.UUID, countedAmount float64, reason string) (*domain.CashRegister, error)        // RF-017 + RNF-011 + RNF-012
@@ -88,22 +88,29 @@ type CashRegisterService interface {
 // ─────────────────────────────────────────────────────────────
 
 type cashRegisterService struct {
-	db           *gorm.DB
-	cashRepo     repository.CashRegisterRepository
-	movementRepo repository.CashMovementRepository
-	saleRepo     repository.SaleRepository
-	userRepo     repository.UserRepository
-	auditRepo    repository.AuditRepository
+	db              *gorm.DB
+	cashRepo        repository.CashRegisterRepository
+	movementRepo    repository.CashMovementRepository
+	saleRepo        repository.SaleRepository
+	userRepo        repository.UserRepository
+	auditRepo       repository.AuditRepository
+	reporteZService ReporteZService
 }
 
 func NewCashRegisterService(
+	db *gorm.DB,
 	cashRepo repository.CashRegisterRepository,
 	movementRepo repository.CashMovementRepository,
 	saleRepo repository.SaleRepository,
 	userRepo repository.UserRepository,
 	auditRepo repository.AuditRepository,
+	reporteZService ReporteZService,
 ) CashRegisterService {
-	return &cashRegisterService{cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo, userRepo: userRepo, auditRepo: auditRepo}
+	return &cashRegisterService{
+		db: db, cashRepo: cashRepo, movementRepo: movementRepo, saleRepo: saleRepo,
+		userRepo: userRepo, auditRepo: auditRepo,
+		reporteZService: reporteZService,
+	}
 }
 
 // NewCashRegisterServiceWithDB construye el servicio con acceso a la BD para
@@ -357,6 +364,7 @@ func (s *cashRegisterService) CloseCashRegister(userID uuid.UUID, countedAmount 
 		Amount: countedAmount, Description: "Cierre de caja (arqueo de efectivo)",
 		MovementCategory: "auto", UserID: userID,
 	})
+
 	return cr, nil
 }
 
