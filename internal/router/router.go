@@ -70,7 +70,7 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 
 	reporteZHandler := handler.NewReporteZHandler(reporteZService)
 
-	reportService := service.NewReportService(saleRepo)
+	reportService := service.NewReportService(saleRepo, medicineRepo)
 	reportHandler := handler.NewReportHandler(reportService)
 
 	botRepo := repository.NewBotRepository(db)
@@ -209,8 +209,10 @@ func Setup(r *gin.Engine, db *gorm.DB, cfg *config.Config) *service.AlertService
 				admin.POST("/sales/:id/anular", saleHandler.VoidCompletedSale)
 				admin.PUT("/sales/:id/anular", saleHandler.VoidCompletedSale)
 
-				admin.GET("/reports/daily-sales", reportHandler.GetDailySalesReport)     // RF-061
-				admin.GET("/reports/monthly-sales", reportHandler.GetMonthlySalesReport) // RF-062
+				admin.GET("/reports/daily-sales", reportHandler.GetDailySalesReport)         // RF-061
+				admin.GET("/reports/monthly-sales", reportHandler.GetMonthlySalesReport)     // RF-062
+				admin.GET("/reports/top-selling", reportHandler.GetTopSellingProducts)       // RF-063
+				admin.GET("/reports/low-rotation", reportHandler.GetLowRotationProducts)    // RF-064
 
 				admin.POST("/bot/access", botHandler.GrantAccess)        // RF-070
 				admin.DELETE("/bot/access/:id", botHandler.RevokeAccess) // RF-070
