@@ -278,8 +278,8 @@ func (h *MedicineHandler) SearchMedicines(c *gin.Context) {
 		// Filtro de stock si se especifica
 		if hasStockParam := c.Query("con_stock"); hasStockParam == "true" && totalStock <= 0 {
 			continue
-		}
 
+		}
 		response = append(response, dto.MedicineSearchResponse{
 			ID:            m.ID.String(),
 			Barcode:       m.Barcode,
@@ -292,6 +292,12 @@ func (h *MedicineHandler) SearchMedicines(c *gin.Context) {
 			PricePerBox:   m.PricePerBox,
 			MinStock:      m.MinStock,
 			TotalStock:    totalStock,
+			HasIva:        m.HasIva,
+			SellsByPill:   m.SellsByPill,
+			SellsBySeal:   m.SellsBySeal,
+			SellsByBox:    m.SellsByBox,
+			UnitsPerSeal:  m.UnitsPerSeal,
+			UnitsPerBox:   m.UnitsPerBox,
 			IsActive:      m.IsActive,
 			CreatedAt:     m.CreatedAt.Format(time.RFC3339),
 		})

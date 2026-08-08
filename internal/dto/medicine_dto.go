@@ -80,6 +80,12 @@ type MedicineSearchResponse struct {
 	PricePerBox   float64 `json:"price_per_box"`
 	MinStock      int     `json:"min_stock"`
 	TotalStock    int     `json:"total_stock"`
+	HasIva        bool    `json:"has_iva"`
+	SellsByPill   bool    `json:"sells_by_pill"`
+	SellsBySeal   bool    `json:"sells_by_seal"`
+	SellsByBox    bool    `json:"sells_by_box"`
+	UnitsPerSeal  int     `json:"units_per_seal"`
+	UnitsPerBox   int     `json:"units_per_box"`
 	IsActive      bool    `json:"is_active"`
 	CreatedAt     string  `json:"created_at"`
 }
