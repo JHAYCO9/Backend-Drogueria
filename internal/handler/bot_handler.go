@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -15,11 +14,6 @@ import (
 type BotHandler struct {
 	botService service.BotService
 	userRepo   repository.UserRepository
-}
-
-// Se simplifica el tipo de userRepo abajo con la interfaz real.
-type BotHandlerDeps struct {
-	BotService service.BotService
 }
 
 func NewBotHandler(botService service.BotService, userRepo repository.UserRepository) *BotHandler {
@@ -121,7 +115,7 @@ func (h *BotHandler) ListAuthorized(c *gin.Context) {
 		response = append(response, dto.BotAuthorizedUserResponse{
 			ID: item.ID.String(), UserID: item.UserID.String(),
 			Username: username, FullName: fullName,
-			CreatedAt: item.CreatedAt.Format(time.RFC3339),
+			CreatedAt: service.FormatBogota(item.CreatedAt),
 		})
 	}
 	c.JSON(http.StatusOK, response)
@@ -143,7 +137,7 @@ func (h *BotHandler) ListQueryLogs(c *gin.Context) {
 		}
 		response = append(response, dto.BotQueryLogResponse{
 			Username: username, Command: l.Command, Result: l.Result,
-			CreatedAt: l.CreatedAt.Format(time.RFC3339),
+			CreatedAt: service.FormatBogota(l.CreatedAt),
 		})
 	}
 	c.JSON(http.StatusOK, response)

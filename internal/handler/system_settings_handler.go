@@ -36,7 +36,7 @@ func (h *SystemSettingsHandler) Get(c *gin.Context) {
 		ReporteZHour: s.ReporteZHour,
 	}
 	if s.LastBackupAt != nil {
-		response.LastBackupAt = s.LastBackupAt.Format(time.RFC3339)
+		response.LastBackupAt = service.FormatBogota(*s.LastBackupAt)
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -111,7 +111,7 @@ func (h *SystemSettingsHandler) CreateBackup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, dto.BackupResponse{
-		FileName: fileName, SizeBytes: size, CreatedAt: time.Now().Format(time.RFC3339),
+		FileName: fileName, SizeBytes: size, CreatedAt: service.FormatBogota(time.Now()),
 	})
 }
 

@@ -71,6 +71,9 @@ func (s *dashboardService) GetSummary() (*dto.DashboardSummaryResponse, error) {
 	medicines, err := s.medicineRepo.FindAll()
 	if err == nil {
 		for _, m := range medicines {
+			if !m.IsActive {
+				continue
+			}
 			stock, _ := s.batchRepo.SumStockByMedicine(m.ID)
 			if stock == 0 {
 				resp.OutOfStockCount++

@@ -10,10 +10,10 @@ import (
 )
 
 type ReportService interface {
-	GetDailySalesReport(date time.Time) (*dto.DailySalesReportResponse, error)                          // RF-061
-	GetMonthlySalesReport(year int, month int) (*dto.MonthlySalesReportResponse, error)                // RF-062
-	GetTopSellingProducts(from, to time.Time, limit int) (*dto.TopSellingProductsResponse, error)       // RF-063
-	GetLowRotationProducts(from, to time.Time, limit int) (*dto.LowRotationProductsResponse, error)    // RF-064
+	GetDailySalesReport(date time.Time) (*dto.DailySalesReportResponse, error)                      // RF-061
+	GetMonthlySalesReport(year int, month int) (*dto.MonthlySalesReportResponse, error)             // RF-062
+	GetTopSellingProducts(from, to time.Time, limit int) (*dto.TopSellingProductsResponse, error)   // RF-063
+	GetLowRotationProducts(from, to time.Time, limit int) (*dto.LowRotationProductsResponse, error) // RF-064
 }
 
 type reportService struct {
@@ -194,7 +194,7 @@ func (s *reportService) GetTopSellingProducts(from, to time.Time, limit int) (*d
 	}
 
 	return &dto.TopSellingProductsResponse{
-		GeneratedAt: time.Now().Format(time.RFC3339),
+		GeneratedAt: FormatBogota(time.Now()),
 		From:        from.Format("2006-01-02"),
 		To:          to.Format("2006-01-02"),
 		Products:    products,
@@ -238,7 +238,7 @@ func (s *reportService) GetLowRotationProducts(from, to time.Time, limit int) (*
 	}
 
 	return &dto.LowRotationProductsResponse{
-		GeneratedAt: time.Now().Format(time.RFC3339),
+		GeneratedAt: FormatBogota(time.Now()),
 		From:        from.Format("2006-01-02"),
 		To:          to.Format("2006-01-02"),
 		Products:    products,

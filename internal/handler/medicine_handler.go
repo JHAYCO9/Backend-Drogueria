@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -62,11 +61,16 @@ func (h *MedicineHandler) FindByBarcode(c *gin.Context) {
 
 	medicine, err := h.medicineService.FindByBarcode(barcode)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no se encontro ningun medicamento con ese codigo de barras"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "medicamento no encontrado"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toMedicineResponse(medicine))
+	totalStock, _ := h.batchRepo.SumStockByMedicine(medicine.ID) // <- esto probablemente faltaba
+
+	response := toMedicineResponse(medicine)
+	response.TotalStock = totalStock // <- y esto
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *MedicineHandler) ListMedicines(c *gin.Context) {
@@ -78,8 +82,12 @@ func (h *MedicineHandler) ListMedicines(c *gin.Context) {
 
 	response := make([]dto.MedicineResponse, 0, len(medicines))
 	for i := range medicines {
-		response = append(response, toMedicineResponse(&medicines[i]))
+		m := &medicines[i]
+		item := toMedicineResponse(m)
+		item.TotalStock, _ = h.batchRepo.SumStockByMedicine(m.ID)
+		response = append(response, item)
 	}
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -299,7 +307,7 @@ func (h *MedicineHandler) SearchMedicines(c *gin.Context) {
 			UnitsPerSeal:  m.UnitsPerSeal,
 			UnitsPerBox:   m.UnitsPerBox,
 			IsActive:      m.IsActive,
-			CreatedAt:     m.CreatedAt.Format(time.RFC3339),
+			CreatedAt:     service.FormatBogota(m.CreatedAt),
 		})
 	}
 
@@ -314,6 +322,6 @@ func toMedicineResponse(m *domain.Medicine) dto.MedicineResponse {
 		MinStock: m.MinStock, HasIva: m.HasIva,
 		SellsByPill: m.SellsByPill, SellsBySeal: m.SellsBySeal, SellsByBox: m.SellsByBox,
 		UnitsPerSeal: m.UnitsPerSeal, UnitsPerBox: m.UnitsPerBox,
-		IsActive: m.IsActive, CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		IsActive: m.IsActive, CreatedAt: service.FormatBogota(m.CreatedAt),
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -98,7 +97,7 @@ func (s *returnService) RegisterReturn(saleID, saleItemID, userID uuid.UUID, qua
 	ret := &domain.Return{
 		ID: uuid.New(), SaleID: saleID, SaleItemID: saleItemID,
 		MedicineID: item.MedicineID, BatchID: item.BatchID, Quantity: quantity,
-		Reason: reason, UserID: userID, CreatedAt: time.Now(),
+		Reason: reason, UserID: userID, CreatedAt: NowBogota(),
 	}
 	if err := s.returnRepo.CreateTx(tx, ret); err != nil {
 		tx.Rollback()
@@ -163,7 +162,7 @@ func (s *returnService) VoidReturn(returnID, userID uuid.UUID, reason string) (*
 		}
 	}()
 
-	now := time.Now()
+	now := NowBogota()
 	ret.Reason = fmt.Sprintf("[ANULADA] %s (Motivo: %s)", ret.Reason, reason)
 	ret.IsVoided = true
 	ret.VoidedReason = reason

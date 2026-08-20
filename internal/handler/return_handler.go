@@ -3,7 +3,6 @@ package handler
 import (
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -134,14 +133,14 @@ func (h *ReturnHandler) ListReturns(c *gin.Context) {
 	for _, d := range details {
 		voidedAtStr := ""
 		if d.Return.VoidedAt != nil {
-			voidedAtStr = d.Return.VoidedAt.Format(time.RFC3339)
+			voidedAtStr = service.FormatBogota(*d.Return.VoidedAt)
 		}
 		response = append(response, dto.ReturnResponse{
 			ID: d.Return.ID.String(), SaleID: d.Return.SaleID.String(), SaleNumber: d.SaleNumber,
 			MedicineName: d.MedicineName, Quantity: d.Return.Quantity, Reason: d.Return.Reason,
 			Username: d.Username, IsVoided: d.Return.IsVoided, VoidedReason: d.Return.VoidedReason,
 			VoidedAt: voidedAtStr, VoidedByName: d.VoidedByName,
-			CreatedAt: d.Return.CreatedAt.Format(time.RFC3339),
+			CreatedAt: service.FormatBogota(d.Return.CreatedAt),
 		})
 	}
 

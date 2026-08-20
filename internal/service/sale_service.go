@@ -103,7 +103,7 @@ func (s *saleService) StartSale(userID uuid.UUID) (*domain.Sale, error) {
 		CashRegisterID: openCash.ID,
 		Status:         "en_progreso",
 		TotalAmount:    0,
-		CreatedAt:      time.Now(),
+		CreatedAt:      NowBogota(),
 	}
 
 	if err := s.saleRepo.Create(sale); err != nil {
@@ -198,7 +198,7 @@ func (s *saleService) AddItem(saleID uuid.UUID, input AddSaleItemInput) (*domain
 	item := &domain.SaleItem{
 		ID: uuid.New(), SaleID: saleID, MedicineID: medicine.ID, BatchID: selectedBatch.ID,
 		Quantity: input.Quantity, SaleUnit: input.SaleUnit, UnitsConsumed: unitsConsumed,
-		UnitPrice: unitPrice, Subtotal: subtotal, TaxAmount: taxAmount, CreatedAt: time.Now(),
+		UnitPrice: unitPrice, Subtotal: subtotal, TaxAmount: taxAmount, CreatedAt: NowBogota(),
 	}
 
 	if err := s.saleRepo.AddItem(item); err != nil {
@@ -453,7 +453,7 @@ func (s *saleService) finalizeCommon(sale *domain.Sale, items []domain.SaleItem)
 		}
 	}
 
-	now := time.Now()
+	now := NowBogota()
 	sale.Status = "finalizada"
 	sale.FinalizedAt = &now
 
@@ -724,7 +724,7 @@ func (s *saleService) CreateSaleAtomic(userID uuid.UUID, req dto.CreateSaleReque
 	}
 
 	// -- Crear cabecera de la venta --
-	now := time.Now()
+	now := NowBogota()
 	sale := &domain.Sale{
 		ID:             uuid.New(),
 		CustomerID:     customerID,
@@ -879,7 +879,7 @@ func (s *saleService) VoidCompletedSale(saleID, adminID uuid.UUID, reason string
 	}
 
 	// -- Marcar venta como anulada --
-	now := time.Now()
+	now := NowBogota()
 	sale.Status = "anulada"
 	sale.CancelledAt = &now
 	sale.CancelledBy = &adminID

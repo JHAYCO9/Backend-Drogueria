@@ -130,7 +130,7 @@ func (h *SaleHandler) toSaleListItems(sales []domain.Sale) []dto.SaleListItem {
 		items = append(items, dto.SaleListItem{
 			ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
 			TotalAmount: sale.TotalAmount, PaymentMethod: sale.PaymentMethod,
-			CashierName: cashierName, CreatedAt: sale.CreatedAt.Format(time.RFC3339),
+			CashierName: cashierName, CreatedAt: service.FormatBogota(sale.CreatedAt),
 			HasReturns: hasReturns,
 		})
 	}
@@ -194,7 +194,7 @@ func (h *SaleHandler) buildSaleResponse(saleID uuid.UUID) (*dto.SaleResponse, er
 
 	var finalizedAt *string
 	if sale.FinalizedAt != nil {
-		f := sale.FinalizedAt.Format(time.RFC3339)
+		f := service.FormatBogota(*sale.FinalizedAt)
 		finalizedAt = &f
 	}
 
@@ -202,7 +202,7 @@ func (h *SaleHandler) buildSaleResponse(saleID uuid.UUID) (*dto.SaleResponse, er
 		ID: sale.ID.String(), SaleNumber: sale.SaleNumber, Status: sale.Status,
 		Items: itemResponses, TotalAmount: sale.TotalAmount, TotalTaxAmount: totalTax,
 		PaymentMethod: sale.PaymentMethod, AmountReceived: sale.AmountReceived, ChangeGiven: sale.ChangeGiven,
-		CreatedAt: sale.CreatedAt.Format(time.RFC3339), FinalizedAt: finalizedAt,
+		CreatedAt: service.FormatBogota(sale.CreatedAt), FinalizedAt: finalizedAt,
 	}, nil
 }
 

@@ -1,8 +1,6 @@
 package service
 
 import (
-	"time"
-
 	"github.com/google/uuid"
 
 	"github.com/drogueria/drogueria-micky-backend/internal/dto"
@@ -90,7 +88,7 @@ func (s *reporteZService) Generate(cashRegisterID uuid.UUID) (*dto.ReporteZRespo
 		}
 	}
 
-	dateTime := time.Now()
+	dateTime := NowBogota()
 	if cr.ClosedAt != nil {
 		dateTime = *cr.ClosedAt
 	}

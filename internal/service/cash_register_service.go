@@ -163,7 +163,7 @@ func (s *cashRegisterService) OpenCashRegister(userID uuid.UUID, openingAmount f
 		OpenedBy:      userID,
 		OpeningAmount: openingAmount,
 		Status:        "abierta",
-		OpenedAt:      time.Now(),
+		OpenedAt:      NowBogota(),
 	}
 
 	if err := s.cashRepo.CreateTx(tx, cr); err != nil {
@@ -199,7 +199,7 @@ func (s *cashRegisterService) openWithoutTx(userID uuid.UUID, openingAmount floa
 	}
 	cr := &domain.CashRegister{
 		ID: uuid.New(), OpenedBy: userID, OpeningAmount: openingAmount,
-		Status: "abierta", OpenedAt: time.Now(),
+		Status: "abierta", OpenedAt: NowBogota(),
 	}
 	if err := s.cashRepo.Create(cr); err != nil {
 		return nil, err
@@ -334,7 +334,7 @@ func (s *cashRegisterService) CloseCashRegister(userID uuid.UUID, countedAmount 
 	// RNF-011: clasificación de la discrepancia (INALTERABLES una vez calculados).
 	discrepancyType := discrepancyTypeOf(difference)
 
-	now := time.Now()
+	now := NowBogota()
 	cr.Status = "cerrada"
 	cr.ClosedBy = &userID
 	cr.ClosedAt = &now
@@ -467,7 +467,7 @@ func (s *cashRegisterService) RegisterManualMovement(
 		Reason:           reason,
 		UserID:           userID,
 		MovementCategory: "manual",
-		CreatedAt:        time.Now(),
+		CreatedAt:        NowBogota(),
 	}
 
 	if err := s.movementRepo.Create(mov); err != nil {

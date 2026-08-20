@@ -77,7 +77,7 @@ func (s *botService) ExecuteCommand(userID uuid.UUID, command string) (string, e
 
 	// RF-078: se registra siempre, incluso si el comando no fue reconocido.
 	_ = s.botRepo.LogQuery(&domain.BotQueryLog{
-		ID: uuid.New(), UserID: userID, Command: command, Result: result, CreatedAt: time.Now(),
+		ID: uuid.New(), UserID: userID, Command: command, Result: result, CreatedAt: NowBogota(),
 	})
 
 	return result, nil
@@ -179,6 +179,9 @@ func (s *botService) queryProductosBajos() (string, error) {
 
 	var lines []string
 	for _, m := range medicines {
+		if !m.IsActive {
+			continue
+		}
 		stock, err := s.batchRepo.SumStockByMedicine(m.ID)
 		if err != nil || stock > m.MinStock {
 			continue
@@ -201,12 +204,15 @@ func (s *botService) GetPendingAlerts() ([]string, error) {
 	medicines, err := s.medicineRepo.FindAll()
 	if err == nil {
 		for _, m := range medicines {
+			if !m.IsActive {
+				continue
+			}
 			stock, err := s.batchRepo.SumStockByMedicine(m.ID)
 			if err != nil || stock > m.MinStock {
 				continue
 			}
 			alerts = append(alerts, fmt.Sprintf(
-				"⚠️ *Stock bajo*: %s — %d unidades (mínimo %d)", m.Name, stock, m.MinStock,
+				"*Stock bajo*: %s — %d unidades (mínimo %d)", m.Name, stock, m.MinStock,
 			))
 		}
 	}

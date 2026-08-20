@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -112,7 +111,7 @@ func (s *medicineService) RegisterMedicine(input RegisterMedicineInput) (*domain
 		MinStock: input.MinStock, HasIva: input.HasIva,
 		SellsByPill: input.SellsByPill, SellsBySeal: input.SellsBySeal, SellsByBox: input.SellsByBox,
 		UnitsPerSeal: maxInt(input.UnitsPerSeal, 1), UnitsPerBox: maxInt(input.UnitsPerBox, 1),
-		IsActive: true, CreatedAt: time.Now(),
+		IsActive: true, CreatedAt: NowBogota(),
 	}
 
 	if err := s.medicineRepo.Create(medicine); err != nil {

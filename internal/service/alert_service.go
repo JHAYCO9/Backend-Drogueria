@@ -35,12 +35,19 @@ func (s *AlertService) CheckInventoryAlerts() {
 		return
 	}
 
-	now := time.Now()
+	now := NowBogota()
 	stockBajoCount := 0
 	proximoVencerCount := 0
 	vencidoCount := 0
 
 	for _, m := range medicines {
+		// RNF: un medicamento desactivado no debe generar ninguna
+		// alerta (ni stock bajo ni vencimiento), aunque siga existiendo
+		// en la base de datos.
+		if !m.IsActive {
+			continue
+		}
+
 		// Verificar stock bajo
 		stock, err := s.batchRepo.SumStockByMedicine(m.ID)
 		if err != nil {

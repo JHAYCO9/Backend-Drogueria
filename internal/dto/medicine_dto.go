@@ -31,6 +31,7 @@ type MedicineResponse struct {
 	PricePerSeal  float64 `json:"price_per_seal"`
 	PricePerBox   float64 `json:"price_per_box"`
 	MinStock      int     `json:"min_stock"`
+	TotalStock    int     `json:"total_stock"`
 	HasIva        bool    `json:"has_iva"`
 	SellsByPill   bool    `json:"sells_by_pill"`
 	SellsBySeal   bool    `json:"sells_by_seal"`

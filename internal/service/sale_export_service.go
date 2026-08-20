@@ -74,7 +74,7 @@ func (s *saleExportService) ExportSales(from, to time.Time) (*dto.SalesExportRes
 	}
 
 	return &dto.SalesExportResponse{
-		ExportedAt: time.Now().Format(time.RFC3339),
+		ExportedAt: FormatBogota(time.Now()),
 		FromDate:   from.Format("2006-01-02"), ToDate: to.Format("2006-01-02"),
 		Count: len(exports), Sales: exports,
 	}, nil
